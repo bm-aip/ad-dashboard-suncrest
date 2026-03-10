@@ -1,7 +1,9 @@
 import os
 import json
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, render_template, request, jsonify
+from flask_caching import Cache
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.campaign import Campaign
@@ -17,6 +19,12 @@ except ImportError:
     pass
 
 app = Flask(__name__)
+
+# ─── CACHE CONFIG ──────────────────────────────────────────
+# Cache API results for 15 minutes — avoids re-hitting Meta on every refresh
+app.config["CACHE_TYPE"]             = "SimpleCache"
+app.config["CACHE_DEFAULT_TIMEOUT"]  = 900  # 15 minutes
+cache = Cache(app)
 
 # ─── CONFIG ────────────────────────────────────────────────
 ACCESS_TOKEN = os.environ.get("META_ACCESS_TOKEN", "").strip()
@@ -338,7 +346,7 @@ def get_breakdown_insights(date_start, date_end, breakdown):
 def get_daily_leads(date_start, date_end):
     """Fetch day-by-day lead counts across all accounts, broken out by campaign."""
     if not ACCESS_TOKEN:
-        return [], []
+        return [], [], []
     init_api()
     # Aggregate by date across both accounts
     date_totals = {}   # date -> total leads
@@ -421,6 +429,7 @@ def merge_wow(cw_list, pw_list):
 # ─── ROUTES ────────────────────────────────────────────────
 
 @app.route("/")
+@cache.cached(timeout=900, query_string=True)  # Cache per unique date range, 15 min
 def index():
     today = datetime.today()
     date_end   = (today - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -441,63 +450,87 @@ def index():
     camp_series    = []
     daily_dates    = []
 
-    # ── Current period campaigns ──
-    try:
-        campaigns = get_insights(date_start, date_end, level="campaign")
-        campaigns = enrich(campaigns)
-        campaigns = [c for c in campaigns if "elements" in c["name"].lower()]
-        campaigns.sort(key=lambda x: x["leads"], reverse=True)
-    except Exception as e:
-        errors.append(f"Campaigns: {e}")
+    # ── Parallel API fetches ──────────────────────────────────
+    # All 6 independent calls fire simultaneously, cutting load
+    # time from ~15s sequential to ~3-4s parallel.
+    def fetch_campaigns():
+        r = get_insights(date_start, date_end, level="campaign")
+        r = enrich(r)
+        r = [c for c in r if "elements" in c["name"].lower()]
+        r.sort(key=lambda x: x["leads"], reverse=True)
+        return r
 
-    # ── Previous period campaigns (WoW) ──
+    def fetch_prev_campaigns():
+        r = get_insights(prev_start, prev_end, level="campaign")
+        r = enrich(r)
+        return [c for c in r if "elements" in c["name"].lower()]
+
+    def fetch_age():
+        return get_breakdown_insights(date_start, date_end, "age")
+
+    def fetch_gender():
+        return get_breakdown_insights(date_start, date_end, "gender")
+
+    def fetch_ads():
+        r = get_insights(date_start, date_end, level="ad")
+        r = enrich(r)
+        r = [a for a in r if "elements" in a.get("campaign_name", "").lower()]
+        r.sort(key=lambda x: x["leads"], reverse=True)
+        return r
+
+    def fetch_adsets():
+        r = get_insights(date_start, date_end, level="adset")
+        r = enrich(r)
+        return [a for a in r if "elements" in a.get("campaign_name", "").lower()]
+
+    def fetch_daily():
+        return get_daily_leads(date_start, date_end)
+
+    tasks = {
+        "campaigns":      fetch_campaigns,
+        "prev_campaigns": fetch_prev_campaigns,
+        "age":            fetch_age,
+        "gender":         fetch_gender,
+        "ads":            fetch_ads,
+        "adsets":         fetch_adsets,
+        "daily":          fetch_daily,
+    }
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        future_map = {executor.submit(fn): name for name, fn in tasks.items()}
+        for future in as_completed(future_map):
+            name = future_map[future]
+            try:
+                results[name] = future.result()
+            except Exception as e:
+                errors.append(f"{name.replace('_',' ').title()}: {e}")
+                results[name] = None
+
+    # Unpack results
+    campaigns      = results.get("campaigns")      or []
+    prev_campaigns = results.get("prev_campaigns") or []
+    age_data       = results.get("age")            or []
+    gender_data    = results.get("gender")         or []
+    all_ads        = results.get("ads")            or []
+    all_adsets     = results.get("adsets")         or []
+    daily_result   = results.get("daily")
+    if daily_result:
+        daily_total, camp_series, daily_dates = daily_result
+    else:
+        daily_total, camp_series, daily_dates = [], [], []
+
+    # ── Merge WoW (depends on both campaign fetches) ──────────
     try:
-        prev_campaigns = get_insights(prev_start, prev_end, level="campaign")
-        prev_campaigns = enrich(prev_campaigns)
-        prev_campaigns = [c for c in prev_campaigns if "elements" in c["name"].lower()]
         campaigns = merge_wow(campaigns, prev_campaigns)
     except Exception as e:
         errors.append(f"Previous period: {e}")
-        # Still apply defaults so template doesn't break
         for c in campaigns:
             c.setdefault("pw_leads", None); c.setdefault("pw_cpl", None)
             c.setdefault("pw_spend", None); c.setdefault("pw_cpl_fmt", "—")
             c.setdefault("pw_spend_fmt", "—"); c.setdefault("wow_leads_delta", "—")
             c.setdefault("wow_leads_up", None); c.setdefault("wow_cpl_delta", "—")
             c.setdefault("wow_cpl_up", None)
-
-    # ── Targeting breakdowns ──
-    try:
-        age_data = get_breakdown_insights(date_start, date_end, "age")
-    except Exception as e:
-        errors.append(f"Age breakdown: {e}")
-    try:
-        gender_data = get_breakdown_insights(date_start, date_end, "gender")
-    except Exception as e:
-        errors.append(f"Gender breakdown: {e}")
-
-    # ── Ad-level data for Creative Analysis ──
-    try:
-        all_ads = get_insights(date_start, date_end, level="ad")
-        all_ads = enrich(all_ads)
-        all_ads = [a for a in all_ads if "elements" in a.get("campaign_name", "").lower()]
-        all_ads.sort(key=lambda x: x["leads"], reverse=True)
-    except Exception as e:
-        errors.append(f"Ads: {e}")
-
-    # ── Adset-level data for Appendix ──
-    try:
-        all_adsets = get_insights(date_start, date_end, level="adset")
-        all_adsets = enrich(all_adsets)
-        all_adsets = [a for a in all_adsets if "elements" in a.get("campaign_name", "").lower()]
-    except Exception as e:
-        errors.append(f"Ad sets: {e}")
-
-    # ── Daily leads trend ──
-    try:
-        daily_total, camp_series, daily_dates = get_daily_leads(date_start, date_end)
-    except Exception as e:
-        errors.append(f"Daily trend: {e}")
 
     error = "; ".join(errors) if errors else None
 
