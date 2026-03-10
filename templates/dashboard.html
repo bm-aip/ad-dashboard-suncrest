@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elements — Performance Campaign Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<style>
+  :root {
+    --bg:#0a0a0f; --surface:#13131a; --surface2:#1c1c28;
+    --border:rgba(255,255,255,0.06);
+    --gold:#c9a227; --gold-light:#e4bc3e; --gold-dim:rgba(201,162,39,0.15);
+    --teal:#2dd4c4; --teal-dim:rgba(45,212,196,0.12);
+    --red:#f56060; --red-dim:rgba(245,96,96,0.12);
+    --green:#4ade80; --green-dim:rgba(74,222,128,0.12);
+    --amber:#fbbf24; --muted:rgba(255,255,255,0.38);
+    --text:rgba(255,255,255,0.88); --text-dim:rgba(255,255,255,0.55);
+  }
+  *{margin:0;padding:0;box-sizing:border-box} html{scroll-behavior:smooth}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+
+  /* HEADER */
+  .header{background:linear-gradient(135deg,#0d0d14,#13131f);border-bottom:1px solid var(--border);padding:36px 60px 28px;position:relative;overflow:hidden}
+  .header::before{content:'';position:absolute;top:-80px;right:-80px;width:320px;height:320px;background:radial-gradient(circle,rgba(201,162,39,0.12) 0%,transparent 70%);pointer-events:none}
+  .header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap}
+  .header-badge{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold);padding:4px 12px;border-radius:2px;opacity:0.8;margin-bottom:12px;display:inline-block}
+  h1{font-family:'Playfair Display',serif;font-size:30px;font-weight:700;color:#fff;line-height:1.2}
+  h1 span{color:var(--gold)}
+  .date-range-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .date-range-panel{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .date-input-wrap{position:relative}
+  .date-input-wrap input{background:var(--surface2);border:1px solid rgba(201,162,39,0.3);color:var(--gold-light);font-family:'DM Mono',monospace;font-size:13px;padding:8px 36px 8px 14px;border-radius:6px;cursor:pointer;min-width:220px;outline:none;transition:border-color 0.2s}
+  .date-input-wrap input:focus{border-color:var(--gold)}
+  .date-input-wrap::after{content:'📅';position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:13px;pointer-events:none}
+  .btn-apply{background:var(--gold);color:#000;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:none;padding:9px 20px;border-radius:6px;cursor:pointer;transition:background 0.2s}
+  .btn-apply:hover{background:var(--gold-light)}
+  .quick-ranges{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .qr-btn{font-size:10px;letter-spacing:1px;text-transform:uppercase;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);padding:5px 10px;border-radius:4px;cursor:pointer;transition:all 0.15s}
+  .qr-btn:hover{background:var(--gold-dim);border-color:var(--gold);color:var(--gold)}
+  .qr-btn.active{background:var(--gold-dim);border-color:var(--gold);color:var(--gold);font-weight:600}
+  /* KPI delta badge */
+  .kpi-delta{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:3px;margin-top:6px}
+  .kpi-delta.up{background:var(--green-dim);color:var(--green)}
+  .kpi-delta.down{background:var(--red-dim);color:var(--red)}
+  .kpi-delta.neutral{background:rgba(255,255,255,0.05);color:var(--muted)}
+  .accounts-row{display:flex;gap:16px;margin-top:20px;flex-wrap:wrap;align-items:center}
+  .account-tag{font-size:12px;color:var(--text-dim);background:var(--surface2);border:1px solid var(--border);padding:5px 14px;border-radius:20px;display:flex;align-items:center;gap:6px}
+  .account-dot{width:6px;height:6px;border-radius:50%}
+  .dot-gold{background:var(--gold)} .dot-teal{background:var(--teal)}
+  .period-pill{font-family:'DM Mono',monospace;font-size:11px;background:var(--gold-dim);border:1px solid rgba(201,162,39,0.25);color:var(--gold);padding:4px 12px;border-radius:20px}
+
+  /* LOADING */
+  #loading-overlay{display:none;position:fixed;inset:0;background:rgba(10,10,15,0.85);z-index:999;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+  #loading-overlay.active{display:flex}
+  .loader-ring{width:48px;height:48px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loader-text{font-family:'DM Mono',monospace;font-size:12px;color:var(--gold);letter-spacing:2px}
+
+  /* NAV */
+  .nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 60px;display:flex;gap:0;overflow-x:auto;position:sticky;top:0;z-index:100}
+  .nav a{text-decoration:none;color:var(--text-dim);font-size:12px;font-weight:500;letter-spacing:1px;text-transform:uppercase;padding:16px 20px;border-bottom:2px solid transparent;transition:all 0.2s;white-space:nowrap}
+  .nav a:hover{color:var(--gold);border-bottom-color:var(--gold)}
+
+  /* MAIN */
+  .main{padding:40px 60px 80px;max-width:1600px;margin:0 auto}
+
+  /* SECTION */
+  .section{margin-bottom:64px}
+  .section-header{display:flex;align-items:baseline;gap:16px;margin-bottom:28px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+  .section-num{font-family:'DM Mono',monospace;font-size:11px;color:var(--gold);opacity:0.7}
+  .section-title{font-family:'Playfair Display',serif;font-size:22px;font-weight:600;color:#fff}
+  .section-sub{font-size:12px;color:var(--muted);margin-left:auto}
+
+  /* KPI GRID */
+  .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px 18px;position:relative;overflow:hidden}
+  .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+  .kpi-card.gold::before{background:linear-gradient(90deg,var(--gold),transparent)}
+  .kpi-card.teal::before{background:linear-gradient(90deg,var(--teal),transparent)}
+  .kpi-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .kpi-value{font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:#fff;line-height:1}
+  .kpi-value.gold{color:var(--gold-light)}
+  .kpi-change{font-size:11px;margin-top:6px;color:var(--muted)}
+
+  /* GRID LAYOUTS */
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+
+  /* CARD */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px}
+  .card-title{font-family:'Playfair Display',serif;font-size:16px;color:#fff;margin-bottom:20px;display:flex;align-items:center;gap:8px}
+  .tag{font-family:'DM Sans',sans-serif;font-size:10px;font-weight:600;letter-spacing:1.5px;padding:2px 8px;border-radius:3px}
+  .tag-best{background:var(--green-dim);color:var(--green);border:1px solid rgba(74,222,128,0.25)}
+  .tag-worst{background:var(--red-dim);color:var(--red);border:1px solid rgba(245,96,96,0.25)}
+
+  /* CHART */
+  .chart-wrap{position:relative;height:260px}
+
+  /* AD ROWS */
+  .ad-list{display:flex;flex-direction:column;gap:10px}
+  .ad-row{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;grid-template-columns:26px 1fr auto auto auto;gap:10px;align-items:center}
+  .ad-row:hover{border-color:rgba(255,255,255,0.1)}
+  .ad-rank{font-family:'DM Mono',monospace;font-size:12px;color:var(--gold);font-weight:500}
+  .ad-rank.worst{color:var(--red)}
+  .ad-name{font-size:13px;font-weight:500;color:var(--text);line-height:1.3}
+  .ad-account{font-size:10px;color:var(--muted);margin-top:2px}
+  .ad-metric{text-align:right}
+  .ad-metric-val{font-family:'DM Mono',monospace;font-size:13px;font-weight:500}
+  .ad-metric-label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:1px}
+  .lead-bar-wrap{height:3px;background:rgba(255,255,255,0.06);border-radius:2px;margin-top:6px}
+  .lead-bar{height:100%;border-radius:2px}
+  .bar-gold{background:var(--gold)} .bar-teal{background:var(--teal)}
+
+  /* WoW TABLE */
+  .wow-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border);margin-bottom:28px}
+  .wow-table{width:100%;border-collapse:collapse}
+  .wow-table thead th{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:12px 14px;text-align:right;background:var(--surface);font-weight:500;white-space:nowrap}
+  .wow-table thead th:first-child{text-align:left}
+  .wow-table tbody tr{border-top:1px solid var(--border)}
+  .wow-table tbody tr:hover{background:rgba(255,255,255,0.02)}
+  .wow-table tbody td{padding:12px 14px;font-size:13px;text-align:right;white-space:nowrap}
+  .wow-table tbody td:first-child{text-align:left}
+  .mono{font-family:'DM Mono',monospace}
+  .pos{color:var(--green)} .neg{color:var(--red)} .neut{color:var(--muted)}
+
+  /* CAMPAIGNS TABLE */
+  .table-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border)}
+  table{width:100%;border-collapse:collapse}
+  thead th{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:14px 16px;text-align:right;background:var(--surface);font-weight:500;white-space:nowrap}
+  thead th:first-child{text-align:center;width:40px}
+  thead th:nth-child(2){text-align:left}
+  tbody tr{border-top:1px solid var(--border);transition:background 0.15s}
+  tbody tr:hover{background:rgba(255,255,255,0.025)}
+  tbody td{padding:14px 16px;font-size:13px;text-align:right;white-space:nowrap}
+  tbody td:first-child{text-align:center}
+  tbody td:nth-child(2){text-align:left}
+  .camp-row{cursor:pointer}
+  .camp-row:hover .camp-name-text{color:var(--gold)}
+  .camp-name-text{font-size:13px;font-weight:500;color:var(--text);transition:color 0.15s;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .arrow{font-size:11px;color:var(--muted);transition:all 0.15s;opacity:0;transform:translateX(-4px)}
+  .camp-row:hover .arrow{opacity:1;transform:translateX(0);color:var(--gold)}
+  .camp-sub{font-size:10px;color:var(--muted);margin-top:2px}
+  .acct-badge{font-size:9px;letter-spacing:1px;font-weight:600;padding:2px 6px;border-radius:3px;white-space:nowrap}
+  .gt-badge{background:var(--gold-dim);color:var(--gold);border:1px solid rgba(201,162,39,0.3)}
+  .bm-badge{background:var(--teal-dim);color:var(--teal);border:1px solid rgba(45,212,196,0.3)}
+  .badge-new{font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:rgba(74,222,128,0.15);color:var(--green);border:1px solid rgba(74,222,128,0.35);padding:2px 7px;border-radius:3px;animation:pulse-new 2s ease-in-out infinite}
+  @keyframes pulse-new{0%,100%{opacity:1}50%{opacity:0.55}}
+
+  /* AGE / TARGETING */
+  .age-grid{display:flex;flex-direction:column;gap:14px}
+  .age-row-grid{display:grid;grid-template-columns:80px 1fr 80px 80px 90px;align-items:center;gap:14px}
+  .age-label{font-family:'DM Mono',monospace;font-size:12px;color:var(--text)}
+  .age-bar-wrap{height:6px;background:rgba(255,255,255,0.05);border-radius:3px}
+  .age-bar{height:100%;border-radius:3px}
+  .age-val{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);text-align:right}
+  .age-cpl{font-family:'DM Mono',monospace;font-size:12px;text-align:right;font-weight:500}
+  .gender-pills{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+  .gender-pill{flex:1;min-width:110px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center}
+  .gender-pct{font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:var(--gold-light)}
+  .gender-label{font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:1px}
+  .gender-sub{font-size:12px;color:var(--text-dim);margin-top:5px}
+
+  /* TARGETING RECOMMENDATIONS */
+  .targeting-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:900px){.targeting-grid{grid-template-columns:1fr}}
+  .target-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px}
+  .target-card.gt-card{border-top:2px solid var(--gold)}
+  .target-card.bm-card{border-top:2px solid var(--teal)}
+  .target-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+  .target-name{font-family:'Playfair Display',serif;font-size:14px;font-weight:600}
+  .target-cpl-badge{font-family:'DM Mono',monospace;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:500;white-space:nowrap}
+  .cpl-good{background:var(--green-dim);color:var(--green)}
+  .cpl-ok{background:rgba(251,191,36,0.12);color:var(--amber)}
+  .cpl-bad{background:var(--red-dim);color:var(--red)}
+  .target-section-label{font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin:10px 0 6px}
+  .target-specs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .tspec{font-size:10px;padding:3px 8px;border-radius:3px;background:rgba(255,255,255,0.05);color:var(--text-dim);border:1px solid rgba(255,255,255,0.07)}
+  .tspec.warn{background:rgba(245,96,96,0.1);color:var(--red);border-color:rgba(245,96,96,0.2)}
+  .tspec.ok{background:rgba(74,222,128,0.08);color:var(--green);border-color:rgba(74,222,128,0.15)}
+  .reco-list{list-style:none;padding:0}
+  .reco-list li{font-size:11.5px;color:var(--text-dim);padding:5px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start}
+  .reco-list li:last-child{border-bottom:none}
+  .reco-icon{flex-shrink:0;font-size:12px;margin-top:1px}
+  .reco-priority{display:inline-block;font-size:9px;padding:1px 5px;border-radius:2px;margin-left:4px;vertical-align:middle}
+  .p-urgent{background:rgba(245,96,96,0.15);color:var(--red)}
+  .p-high{background:rgba(251,191,36,0.15);color:var(--amber)}
+  .p-test{background:rgba(45,212,196,0.1);color:var(--teal)}
+  .insight-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+  @media(max-width:900px){.insight-grid{grid-template-columns:1fr 1fr}}
+  .insight-box{background:var(--surface2);border-radius:8px;padding:16px;border:1px solid var(--border);border-left:3px solid}
+  .insight-box.gold{border-left-color:var(--gold)}
+  .insight-box.teal{border-left-color:var(--teal)}
+  .insight-box.red{border-left-color:var(--red)}
+  .insight-icon{font-size:18px;margin-bottom:8px}
+  .insight-title{font-size:12px;font-weight:600;color:var(--text);margin-bottom:4px}
+  .insight-desc{font-size:11px;color:var(--muted);line-height:1.5}
+  .appendix-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border)}
+  .app-table{width:100%;border-collapse:collapse;font-size:12px}
+  .app-table thead th{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding:12px 14px;text-align:right;background:var(--surface);font-weight:500;white-space:nowrap}
+  .app-table thead th:first-child{text-align:center;width:36px}
+  .app-table thead th:nth-child(2){text-align:left}
+  .app-table tbody tr{border-top:1px solid var(--border)}
+  .app-table tbody tr:hover{background:rgba(255,255,255,0.02)}
+  .app-table tbody td{padding:12px 14px;text-align:right;white-space:nowrap}
+  .app-table tbody td:first-child{text-align:center}
+  .app-table tbody td:nth-child(2){text-align:left}
+  .drill-toggle{font-size:10px;color:var(--muted);transition:transform 0.2s;cursor:pointer;user-select:none;display:inline-block}
+  .drill-row{cursor:pointer}
+  .drill-sub td{padding:0!important;background:rgba(0,0,0,0.25)}
+  .adset-table{width:100%;border-collapse:collapse}
+  .adset-table td{padding:9px 14px;text-align:right;border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
+  .adset-table td:first-child{text-align:left;padding-left:36px}
+  .adset-table tr:last-child td{border-bottom:none}
+
+  /* ERROR */
+  .error-banner{background:var(--red-dim);border:1px solid rgba(245,96,96,0.3);color:var(--red);padding:14px 20px;border-radius:8px;margin-bottom:24px;font-size:13px;display:flex;align-items:center;gap:10px}
+
+  /* FOOTER */
+  .footer{border-top:1px solid var(--border);padding:24px 60px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace}
+
+  /* EMPTY */
+  .empty-state{padding:60px;text-align:center;color:var(--muted);font-family:'DM Mono',monospace;font-size:13px}
+  .empty-icon{font-size:36px;margin-bottom:12px;opacity:0.5}
+
+  /* FLATPICKR DARK */
+  .flatpickr-calendar{background:var(--surface2)!important;border:1px solid rgba(201,162,39,0.3)!important;border-radius:10px!important;box-shadow:0 20px 60px rgba(0,0,0,0.6)!important}
+  .flatpickr-day.selected,.flatpickr-day.startRange,.flatpickr-day.endRange{background:var(--gold)!important;border-color:var(--gold)!important;color:#000!important}
+  .flatpickr-day.inRange{background:var(--gold-dim)!important;border-color:transparent!important}
+  .flatpickr-day{color:var(--text)!important}
+  .flatpickr-day:hover{background:rgba(201,162,39,0.2)!important}
+  .flatpickr-months{background:transparent!important}
+  .flatpickr-month,.flatpickr-weekday{color:var(--gold)!important;fill:var(--gold)!important}
+  .flatpickr-prev-month svg,.flatpickr-next-month svg{fill:var(--gold)!important}
+  .flatpickr-day.today{border-color:rgba(201,162,39,0.4)!important}
+
+  /* RESPONSIVE */
+  @media(max-width:1100px){
+    .header,.nav,.main,.footer{padding-left:24px;padding-right:24px}
+    .kpi-grid{grid-template-columns:repeat(3,1fr)}
+    .two-col{grid-template-columns:1fr}
+  }
+  @media(max-width:700px){
+    .kpi-grid{grid-template-columns:1fr 1fr}
+    h1{font-size:22px}
+    .age-row-grid{grid-template-columns:70px 1fr 70px}
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="loader-ring"></div>
+  <div class="loader-text">FETCHING LIVE DATA…</div>
+</div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-top">
+    <div>
+      <div class="header-badge">Performance Intelligence Report</div>
+      <h1>Elements — <span>Performance Campaign Dashboard</span></h1>
+    </div>
+    <div>
+      <div class="date-range-label">Date Range</div>
+      <form method="GET" action="/" id="date-form" style="display:contents">
+        <div class="date-range-panel">
+          <div class="date-input-wrap">
+            <input type="text" id="date-range-picker" name="_daterange"
+              value="{{ date_start }} to {{ date_end }}" readonly>
+            <input type="hidden" id="inp-start" name="date_start" value="{{ date_start }}">
+            <input type="hidden" id="inp-end"   name="date_end"   value="{{ date_end }}">
+          </div>
+          <button class="btn-apply" type="submit">Apply</button>
+        </div>
+        <div class="quick-ranges">
+          <button type="button" class="qr-btn" onclick="setRange(7)">7 Days</button>
+          <button type="button" class="qr-btn" onclick="setRange(14)">14 Days</button>
+          <button type="button" class="qr-btn" onclick="setRange(30)">30 Days</button>
+          <button type="button" class="qr-btn" onclick="setRange(0,'week')">This Week</button>
+          <button type="button" class="qr-btn" onclick="setRange(0,'month')">This Month</button>
+        </div>
+      </form>
+      <div style="margin-top:10px">
+        <span class="period-pill">{{ date_start }} → {{ date_end }}</span>
+        <span style="font-size:11px;color:var(--muted);margin-left:10px">vs {{ prev_start }} → {{ prev_end }}</span>
+      </div>
+    </div>
+  </div>
+  <div class="accounts-row">
+    <div class="account-tag"><span class="account-dot dot-gold"></span> GT Bharathi Projects · act_522598556166911</div>
+    <div class="account-tag"><span class="account-dot dot-teal"></span> Bharathi Meraki · act_991827431878117</div>
+    <div class="account-tag" style="margin-left:auto">Meta Ads API · 7d click + 1d view attribution</div>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <a href="#overview">Overview</a>
+  <a href="#campaigns">Campaigns</a>
+  <a href="#top-bottom">Top & Bottom</a>
+  <a href="#wow">{{ period_label }}</a>
+  <a href="#trend">Leads Trend</a>
+  <a href="#targeting">Targeting</a>
+  <a href="#targeting-reco">Targeting Reco</a>
+  <a href="#creative">Creative</a>
+  <a href="#appendix">Appendix</a>
+</nav>
+
+<div class="main">
+
+{% if error %}
+<div class="error-banner">⚠️ {{ error }}</div>
+{% endif %}
+
+<!-- ═══ 01: OVERVIEW ═══ -->
+<section id="overview" class="section">
+  <div class="section-header">
+    <span class="section-num">01</span>
+    <h2 class="section-title">Account Overview</h2>
+    <span class="section-sub">Both accounts · {{ date_start }} – {{ date_end }}</span>
+  </div>
+  <div class="kpi-grid">
+    {% macro delta_badge(val, invert=false) %}
+      {% if val is not none %}
+        {% if (val > 0 and not invert) or (val < 0 and invert) %}
+          <span class="kpi-delta up">↑ {{ val|abs }}%</span>
+        {% elif (val < 0 and not invert) or (val > 0 and invert) %}
+          <span class="kpi-delta down">↓ {{ val|abs }}%</span>
+        {% else %}
+          <span class="kpi-delta neutral">→ 0%</span>
+        {% endif %}
+      {% endif %}
+    {% endmacro %}
+    <div class="kpi-card gold">
+      <div class="kpi-label">Total Leads</div>
+      <div class="kpi-value gold">{{ kpis.total_leads }}</div>
+      {{ delta_badge(kpi_deltas.leads) }}
+    </div>
+    <div class="kpi-card teal">
+      <div class="kpi-label">Total Spend</div>
+      <div class="kpi-value">{{ fmt_inr(kpis.total_spend) }}</div>
+      {{ delta_badge(kpi_deltas.spend) }}
+    </div>
+    <div class="kpi-card gold">
+      <div class="kpi-label">Avg. CPL</div>
+      <div class="kpi-value">{% if kpis.avg_cpl %}₹{{ kpis.avg_cpl|int }}{% else %}—{% endif %}</div>
+      {{ delta_badge(kpi_deltas.avg_cpl, invert=true) }}
+    </div>
+    <div class="kpi-card teal">
+      <div class="kpi-label">Best CPL</div>
+      <div class="kpi-value gold">{% if kpis.best_cpl %}₹{{ kpis.best_cpl|int }}{% else %}—{% endif %}</div>
+      {{ delta_badge(kpi_deltas.best_cpl, invert=true) }}
+    </div>
+    <div class="kpi-card gold">
+      <div class="kpi-label">Total Impressions</div>
+      <div class="kpi-value">{{ fmt_num(kpis.total_impr) }}</div>
+      {{ delta_badge(kpi_deltas.impr) }}
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 02: ALL CAMPAIGNS ═══ -->
+<section id="campaigns" class="section">
+  <div class="section-header">
+    <span class="section-num">02</span>
+    <h2 class="section-title">All Campaigns</h2>
+    <span class="section-sub">Click any row to drill into Ad Sets & Ads →</span>
+  </div>
+  {% if campaigns %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Campaign</th><th>Impressions</th><th>Reach</th>
+          <th>Clicks</th><th>CTR</th><th>Spend</th><th>Leads</th><th>Leads Δ</th><th>CPL</th><th>CPL Δ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in campaigns %}
+        <tr class="camp-row" data-id="{{ c.id }}" data-name="{{ c.name | e }}">
+          <td style="color:var(--muted);font-family:'DM Mono',monospace;font-size:12px">{{ loop.index }}</td>
+          <td>
+            <div class="camp-name-text">
+              {{ c.name[:45] }}
+              <span class="acct-badge {% if c.account_badge=='GT' %}gt-badge{% else %}bm-badge{% endif %}">{{ c.account_badge }}</span>
+              {% if c.is_new %}<span class="badge-new">New</span>{% endif %}
+              <span class="arrow">→</span>
+            </div>
+            <div class="camp-sub">{{ c.account_name }}</div>
+          </td>
+          <td class="mono">{{ c.impr_fmt }}</td>
+          <td class="mono">{{ c.reach_fmt }}</td>
+          <td class="mono">{{ c.clicks }}</td>
+          <td class="mono">{{ c.ctr_fmt }}</td>
+          <td class="mono">{{ c.spend_fmt }}</td>
+          <td style="font-family:'Playfair Display',serif;font-size:15px;font-weight:700;color:{% if c.leads>=100 %}var(--gold){% elif c.leads>=30 %}var(--amber){% else %}var(--text){% endif %}">{{ c.leads }}</td>
+          <td class="mono {% if c.wow_leads_up == true %}pos{% elif c.wow_leads_up == false %}neg{% else %}neut{% endif %}" style="font-size:12px">{{ c.wow_leads_delta }}</td>
+          <td class="mono" style="font-weight:600;color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</td>
+          <td class="mono {% if c.wow_cpl_up == true %}pos{% elif c.wow_cpl_up == false %}neg{% else %}neut{% endif %}" style="font-size:12px">{{ c.wow_cpl_delta }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">📊</div><div>No campaign data for this date range.</div></div>
+  {% endif %}
+</section>
+
+<!-- ═══ 03: TOP & BOTTOM ═══ -->
+<section id="top-bottom" class="section">
+  <div class="section-header">
+    <span class="section-num">03</span>
+    <h2 class="section-title">Top & Bottom Campaigns</h2>
+    <span class="section-sub">By lead volume & CPL · {{ date_start }} – {{ date_end }}</span>
+  </div>
+  <div class="two-col" style="margin-bottom:24px">
+    <div class="card">
+      <div class="card-title">Best by Lead Volume <span class="tag tag-best">TOP 5</span></div>
+      <div class="ad-list">
+        {% set max_leads = top_by_leads[0].leads if top_by_leads else 1 %}
+        {% for c in top_by_leads %}
+        <div class="ad-row">
+          <div class="ad-rank">#{{ loop.index }}</div>
+          <div>
+            <div class="ad-name">{{ c.name[:36] }}</div>
+            <div class="ad-account"><span style="color:{% if c.account_badge=='GT' %}var(--gold){% else %}var(--teal){% endif %}">●</span> {{ c.account_name }}</div>
+            <div class="lead-bar-wrap"><div class="lead-bar {% if c.account_badge=='GT' %}bar-gold{% else %}bar-teal{% endif %}" style="width:{{ (c.leads/max_leads*100)|int }}%"></div></div>
+          </div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--gold);font-size:16px">{{ c.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
+        </div>
+        {% else %}<div style="color:var(--muted);font-size:13px;padding:20px 0">No data</div>{% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Lowest Lead Volume <span class="tag tag-worst">BOTTOM 5</span></div>
+      <div class="ad-list">
+        {% for c in worst_by_leads %}
+        <div class="ad-row">
+          <div class="ad-rank worst">#{{ loop.index }}</div>
+          <div>
+            <div class="ad-name">{{ c.name[:36] }}</div>
+            <div class="ad-account"><span style="color:{% if c.account_badge=='GT' %}var(--gold){% else %}var(--teal){% endif %}">●</span> {{ c.account_name }}</div>
+          </div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--red)">{{ c.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
+        </div>
+        {% else %}<div style="color:var(--muted);font-size:13px;padding:20px 0">No data</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">Best CPL <span class="tag tag-best">TOP 5</span></div>
+      <div class="ad-list">
+        {% for c in best_by_cpl %}
+        <div class="ad-row">
+          <div class="ad-rank">#{{ loop.index }}</div>
+          <div><div class="ad-name">{{ c.name[:36] }}</div><div class="ad-account">{{ c.account_name }}</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--green)">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--gold)">{{ c.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
+        </div>
+        {% else %}<div style="color:var(--muted);font-size:13px;padding:20px 0">No data</div>{% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Worst CPL <span class="tag tag-worst">BOTTOM 5</span></div>
+      <div class="ad-list">
+        {% for c in worst_by_cpl %}
+        <div class="ad-row">
+          <div class="ad-rank worst">#{{ loop.index }}</div>
+          <div><div class="ad-name">{{ c.name[:36] }}</div><div class="ad-account">{{ c.account_name }}</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--red)">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ c.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
+        </div>
+        {% else %}<div style="color:var(--muted);font-size:13px;padding:20px 0">No data</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 04: WEEK-ON-WEEK ═══ -->
+<section id="wow" class="section">
+  <div class="section-header">
+    <span class="section-num">04</span>
+    <h2 class="section-title">{{ period_label }} Comparison</h2>
+    <span class="section-sub">{{ date_start }}–{{ date_end }} vs {{ prev_start }}–{{ prev_end }}</span>
+  </div>
+  {% if campaigns %}
+  <div class="wow-wrap">
+    <table class="wow-table">
+      <thead>
+        <tr>
+          <th>Campaign</th>
+          <th>CW Leads</th><th>PW Leads</th><th>Leads Δ</th>
+          <th>CW CPL</th><th>PW CPL</th><th>CPL Δ</th>
+          <th>CW Spend</th><th>PW Spend</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in campaigns %}
+        <tr>
+          <td>
+            <div style="font-size:13px;font-weight:500;color:var(--text)">{{ c.name[:32] }}</div>
+            <div style="margin-top:3px"><span class="acct-badge {% if c.account_badge=='GT' %}gt-badge{% else %}bm-badge{% endif %}">{{ c.account_badge }}</span></div>
+          </td>
+          <td class="mono" style="color:var(--gold)">{{ c.leads }}</td>
+          <td class="mono neut">{{ c.pw_leads if c.pw_leads is not none else '—' }}</td>
+          <td class="mono {% if c.wow_leads_up == true %}pos{% elif c.wow_leads_up == false %}neg{% else %}neut{% endif %}">{{ c.wow_leads_delta }}</td>
+          <td class="mono" style="color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</td>
+          <td class="mono neut">{{ c.pw_cpl_fmt }}</td>
+          <td class="mono {% if c.wow_cpl_up == true %}pos{% elif c.wow_cpl_up == false %}neg{% else %}neut{% endif %}">{{ c.wow_cpl_delta }}</td>
+          <td class="mono">{{ c.spend_fmt }}</td>
+          <td class="mono neut">{{ c.pw_spend_fmt }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">Leads — Current vs Previous Period</div>
+      <div class="chart-wrap"><canvas id="wowLeadsChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">CPL — Current vs Previous Period (₹)</div>
+      <div class="chart-wrap"><canvas id="wowCplChart"></canvas></div>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">📈</div><div>No WoW data available.</div></div>
+  {% endif %}
+</section>
+
+<!-- ═══ 04b: DAILY LEADS TREND ═══ -->
+{% if daily_total %}
+<section id="trend" class="section">
+  <div class="section-header">
+    <span class="section-num">04b</span>
+    <h2 class="section-title">Daily Leads Trend</h2>
+    <span class="section-sub">Day-wise lead counts · {{ date_start }} – {{ date_end }}</span>
+  </div>
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-title">Total Leads per Day — All Campaigns</div>
+    <div class="chart-wrap" style="height:220px"><canvas id="dailyTotalChart"></canvas></div>
+  </div>
+  {% if camp_series %}
+  <div class="card">
+    <div class="card-title">Top Campaigns — Daily Lead Breakdown</div>
+    <div class="chart-wrap" style="height:260px"><canvas id="dailyCampChart"></canvas></div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+<!-- ═══ 05: TARGETING ═══ -->
+<section id="targeting" class="section">
+  <div class="section-header">
+    <span class="section-num">05</span>
+    <h2 class="section-title">Targeting Analysis</h2>
+    <span class="section-sub">Age & gender · Both accounts combined</span>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">Age Group Performance</div>
+      {% if age_rows %}
+      <div class="age-grid">
+        <div class="age-row-grid" style="margin-bottom:4px">
+          <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)">Age</div>
+          <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)">Leads</div>
+          <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);text-align:right">Spend</div>
+          <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);text-align:right">Impr.</div>
+          <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);text-align:right">CPL</div>
+        </div>
+        {% for r in age_rows %}
+        <div class="age-row-grid">
+          <div class="age-label">{{ r.segment }}</div>
+          <div>
+            <div class="age-bar-wrap"><div class="age-bar bar-gold" style="width:{{ (r.leads/max_age_leads*100)|int }}%"></div></div>
+            <div style="font-size:10px;color:var(--muted);margin-top:3px">{{ r.leads }}</div>
+          </div>
+          <div class="age-val">{{ r.spend_fmt }}</div>
+          <div class="age-val">{{ fmt_num(r.impressions) }}</div>
+          <div class="age-cpl" style="color:{{ r.cpl_color }}">{{ r.cpl_fmt }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="color:var(--muted);font-size:13px;padding:20px 0">Age breakdown not available for this date range.</div>
+      {% endif %}
+    </div>
+    <div class="card">
+      <div class="card-title">Gender Split</div>
+      {% if gender_rows %}
+      <div class="gender-pills">
+        {% for g in gender_rows %}
+        <div class="gender-pill">
+          <div class="gender-pct">{{ g.pct }}%</div>
+          <div class="gender-label">{{ g.segment }}</div>
+          <div class="gender-sub">{{ g.leads }} leads</div>
+          <div class="gender-sub" style="color:{{ g.cpl_color }}">CPL {{ g.cpl_fmt }}</div>
+          <div class="gender-sub">{{ g.spend_fmt }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="chart-wrap" style="height:200px"><canvas id="genderChart"></canvas></div>
+      {% else %}
+      <div style="color:var(--muted);font-size:13px;padding:20px 0">Gender breakdown not available for this date range.</div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 05b: TARGETING ANALYSIS & RECOMMENDATIONS ═══ -->
+<section id="targeting-reco" class="section">
+  <div class="section-header">
+    <span class="section-num">05b</span>
+    <h2 class="section-title">Targeting Analysis & Recommendations</h2>
+    <span class="section-sub">Senior living context · Per-campaign audit · Data sourced from Meta Ads API targeting specs</span>
+  </div>
+
+  <div class="insight-grid" style="margin-bottom:28px">
+    <div class="insight-box gold">
+      <div class="insight-icon">🎯</div>
+      <div class="insight-title">Who Buys Senior Living?</div>
+      <div class="insight-desc">Two buyer segments: <strong>Self-buyers</strong> (55–70, retiring professionals) and <strong>Children buyers</strong> (40–55, buying for aging parents). Both need separate targeting approaches.</div>
+    </div>
+    <div class="insight-box teal">
+      <div class="insight-icon">💼</div>
+      <div class="insight-title">Highest-Converting Profiles</div>
+      <div class="insight-desc">IT veterans (TCS/Infosys retirees), PSU/govt pensioners (Railways, Defence), doctors, and business owners aged 50–65 with high net worth and retirement mindset.</div>
+    </div>
+    <div class="insight-box red">
+      <div class="insight-icon">⚠️</div>
+      <div class="insight-title">Open Targeting Risk</div>
+      <div class="insight-desc">Broad targeting works when creative is highly relevant (Kaveri videos). Without strong creative signals, OT wastes budget on 25–40 year olds unready for senior living purchase.</div>
+    </div>
+  </div>
+
+  <div class="targeting-grid">
+    <!-- GT: Elements Madhuram Jan -->
+    <div class="target-card gt-card">
+      <div class="target-header">
+        <div>
+          <div style="font-size:10px;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">GT Bharathi Projects</div>
+          <div class="target-name">Elements Madhuram Jan</div>
+        </div>
+        <span class="target-cpl-badge cpl-ok">CPL ₹233 → ₹179 PW</span>
+      </div>
+      <div class="target-section-label">Current Targeting</div>
+      <div class="target-specs">
+        <span class="tspec">Age 35–65</span>
+        <span class="tspec ok">40km radius · Chennai south</span>
+        <span class="tspec ok">IT employers: TCS, Infosys, IBM, Wipro</span>
+        <span class="tspec ok">Banks: SBI, HDFC, Canara</span>
+        <span class="tspec ok">Retirement planning interest</span>
+        <span class="tspec ok">Pension, Property interests</span>
+        <span class="tspec warn">Age 35 too young</span>
+        <span class="tspec warn">Classical music interest (noise)</span>
+        <span class="tspec warn">Engaged Shoppers (irrelevant)</span>
+      </div>
+      <div class="target-section-label">Recommendations</div>
+      <ul class="reco-list">
+        <li><span class="reco-icon">🔺</span><span>Raise minimum age to <strong>40</strong> — 35-year-olds are rarely senior living buyers <span class="reco-priority p-urgent">Urgent</span></span></li>
+        <li><span class="reco-icon">✂️</span><span>Remove Classical music, Engaged Shoppers interests — they add noise without senior-living intent <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">➕</span><span>Add "Senior citizen" interest + "Yoga / wellness" behaviors <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">🧪</span><span>Split test: 40–55 (children buyer) vs 55–65 (self-buyer) with different creatives <span class="reco-priority p-test">Test</span></span></li>
+        <li><span class="reco-icon">🔁</span><span>Add retargeting layer for website/form visitors — warm leads at lower CPL <span class="reco-priority p-test">Test</span></span></li>
+      </ul>
+    </div>
+
+    <!-- GT: Elements Uptown Feb -->
+    <div class="target-card gt-card">
+      <div class="target-header">
+        <div>
+          <div style="font-size:10px;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">GT Bharathi Projects</div>
+          <div class="target-name">Elements Uptown Feb</div>
+        </div>
+        <span class="target-cpl-badge cpl-bad">CPL ₹972 🔴 Worst</span>
+      </div>
+      <div class="target-section-label">Current Targeting</div>
+      <div class="target-specs">
+        <span class="tspec ok">Age 35–65</span>
+        <span class="tspec warn">16km radius only — very narrow</span>
+        <span class="tspec warn">Zero interest targeting</span>
+        <span class="tspec warn">Zero behavior signals</span>
+        <span class="tspec warn">Open Targeting — Meta guessing</span>
+        <span class="tspec warn">Gender auto-expand ON</span>
+      </div>
+      <div class="target-section-label">Recommendations</div>
+      <ul class="reco-list">
+        <li><span class="reco-icon">🗺️</span><span>Expand radius to <strong>40–50km</strong> — capture affluent Chennai zones (Anna Nagar, Adyar, OMR, ECR) <span class="reco-priority p-urgent">Urgent</span></span></li>
+        <li><span class="reco-icon">🎯</span><span>Add interest targeting: retirement planning, property, wealth management, luxury travel <span class="reco-priority p-urgent">Urgent</span></span></li>
+        <li><span class="reco-icon">🔺</span><span>Raise minimum age to <strong>45</strong> — Uptown is premium; younger buyers less likely <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">🧪</span><span>Duplicate Madhuram Jan's TG targeting into this campaign and compare CPL within 2 weeks <span class="reco-priority p-test">Test</span></span></li>
+        <li><span class="reco-icon">🌍</span><span>Add NRI-connected behaviors (Lived abroad, Family of those abroad) <span class="reco-priority p-test">Test</span></span></li>
+      </ul>
+    </div>
+
+    <!-- GT: Brand & Carousel -->
+    <div class="target-card gt-card">
+      <div class="target-header">
+        <div>
+          <div style="font-size:10px;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">GT Bharathi Projects</div>
+          <div class="target-name">Elements Brand &amp; Carousel</div>
+        </div>
+        <span class="target-cpl-badge cpl-bad">CPL ₹894 · 2 ad sets</span>
+      </div>
+      <div class="target-section-label">Current Targeting (2 Ad Sets)</div>
+      <div class="target-specs">
+        <span class="tspec ok">TG set: PSU employers (ONGC, Railways, BPCL, ISRO)</span>
+        <span class="tspec ok">TG set: Indian Defence (Army, Navy, Air Force)</span>
+        <span class="tspec ok">TG set: Doctors, Medical professionals</span>
+        <span class="tspec ok">TG set: 45km radius · Good coverage</span>
+        <span class="tspec warn">OT set: Advantage+ age expansion 25+</span>
+        <span class="tspec warn">OT set: No interest signals</span>
+        <span class="tspec warn">OT set dragging overall CPL to ₹894</span>
+      </div>
+      <div class="target-section-label">Recommendations</div>
+      <ul class="reco-list">
+        <li><span class="reco-icon">⛔</span><span>Pause or restructure the OT ad set — wasting spend on 25–40 age group <span class="reco-priority p-urgent">Urgent</span></span></li>
+        <li><span class="reco-icon">🔺</span><span>If keeping OT, set minimum age <strong>50</strong> — carousel suits senior self-buyers better <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">💰</span><span>Shift more budget to TG set — PSU/defence targeting is correctly relevant <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">➕</span><span>Add "Central Government Employees" interest to TG set <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">🃏</span><span>Add pricing/offer in each carousel card — ₹X lakhs anchor boosts conversion intent <span class="reco-priority p-test">Test</span></span></li>
+      </ul>
+    </div>
+
+    <!-- BM: Kaveri Mysuru -->
+    <div class="target-card bm-card">
+      <div class="target-header">
+        <div>
+          <div style="font-size:10px;color:var(--teal);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Bharathi Meraki</div>
+          <div class="target-name">Elements Kaveri Mysuru</div>
+        </div>
+        <span class="target-cpl-badge cpl-good">CPL ₹143 🟢</span>
+      </div>
+      <div class="target-section-label">Current Targeting</div>
+      <div class="target-specs">
+        <span class="tspec ok">Age 35–65</span>
+        <span class="tspec ok">Bangalore + Mysore cities</span>
+        <span class="tspec ok">Broad targeting — working well</span>
+        <span class="tspec">Mix of LEAD_GEN + QUALITY_LEAD goals</span>
+        <span class="tspec warn">No interest layering</span>
+        <span class="tspec warn">Inconsistent optimization goals across ad sets</span>
+      </div>
+      <div class="target-section-label">Recommendations</div>
+      <ul class="reco-list">
+        <li><span class="reco-icon">✅</span><span>Keep current broad structure — don't over-engineer a ₹143 CPL campaign <span class="reco-priority p-high">Preserve</span></span></li>
+        <li><span class="reco-icon">⚙️</span><span>Standardize all ad sets to <strong>QUALITY_LEAD</strong> optimization <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">🧪</span><span>Duplicate one OT ad set → add retirement + property interests as test (keep original live) <span class="reco-priority p-test">Test</span></span></li>
+        <li><span class="reco-icon">🗺️</span><span>Expand to Coimbatore + Salem — large retiring IT/govt workforce <span class="reco-priority p-test">Test</span></span></li>
+        <li><span class="reco-icon">👨‍👧</span><span>Add "Parents" behavior (50–65 with children) — high overlap with senior living decision-makers <span class="reco-priority p-test">Test</span></span></li>
+      </ul>
+    </div>
+
+    <!-- BM: Kaveri Video Camp -->
+    <div class="target-card bm-card">
+      <div class="target-header">
+        <div>
+          <div style="font-size:10px;color:var(--teal);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Bharathi Meraki</div>
+          <div class="target-name">Kaveri Video Camp</div>
+        </div>
+        <span class="target-cpl-badge cpl-good">CPL ₹131 🏆 Portfolio Best</span>
+      </div>
+      <div class="target-section-label">Current Targeting</div>
+      <div class="target-specs">
+        <span class="tspec ok">Age 35–65</span>
+        <span class="tspec ok">Bangalore + Mysore cities</span>
+        <span class="tspec ok">Broad targeting — Ashwin video drives quality</span>
+        <span class="tspec ok">QUALITY_LEAD optimization</span>
+        <span class="tspec warn">No interest signals</span>
+        <span class="tspec warn">No geographic expansion beyond Blr/MYS</span>
+      </div>
+      <div class="target-section-label">Recommendations</div>
+      <ul class="reco-list">
+        <li><span class="reco-icon">✅</span><span>Keep current structure intact — video creative + geography combination is working perfectly <span class="reco-priority p-high">Preserve</span></span></li>
+        <li><span class="reco-icon">🗺️</span><span>Test Hyderabad expansion: duplicate winning ad set targeting 40–65 in HITEC City area <span class="reco-priority p-test">Test</span></span></li>
+        <li><span class="reco-icon">🗺️</span><span>Test Pune expansion — large Marathi + Kannada-speaking retiree population <span class="reco-priority p-test">Test</span></span></li>
+        <li><span class="reco-icon">💬</span><span>Test WhatsApp CTA alongside lead form — senior buyers prefer direct conversation <span class="reco-priority p-test">Test</span></span></li>
+        <li><span class="reco-icon">👨‍💻</span><span>Layer retired IT professional behaviors on a duplicate to filter higher-intent audience <span class="reco-priority p-test">Test</span></span></li>
+      </ul>
+    </div>
+
+    <!-- BM: Kucharam -->
+    <div class="target-card bm-card">
+      <div class="target-header">
+        <div>
+          <div style="font-size:10px;color:var(--teal);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px">Bharathi Meraki</div>
+          <div class="target-name">Kucharam Hyderabad Survey</div>
+        </div>
+        <span class="target-cpl-badge cpl-bad">CPL ₹678 · Paused</span>
+      </div>
+      <div class="target-section-label">Current Targeting</div>
+      <div class="target-specs">
+        <span class="tspec ok">Age 40–65 ✓ Correct floor</span>
+        <span class="tspec ok">40km radius · Central Hyderabad</span>
+        <span class="tspec warn">Zero interest targeting</span>
+        <span class="tspec warn">Zero behavior signals</span>
+        <span class="tspec warn">LEAD_GENERATION goal (not QUALITY_LEAD)</span>
+        <span class="tspec warn">Not focused on HITEC City / Gachibowli affluent belt</span>
+      </div>
+      <div class="target-section-label">Recommendations</div>
+      <ul class="reco-list">
+        <li><span class="reco-icon">🎯</span><span>Add HYD IT employer targeting: TCS, Infosys, Wipro, Cognizant, Microsoft, Amazon <span class="reco-priority p-urgent">Urgent</span></span></li>
+        <li><span class="reco-icon">⚙️</span><span>Switch from LEAD_GENERATION to <strong>QUALITY_LEAD</strong> optimization <span class="reco-priority p-urgent">Urgent</span></span></li>
+        <li><span class="reco-icon">🗺️</span><span>Tighten radius to 25–30km focused on HITEC City, Gachibowli, Banjara Hills <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">➕</span><span>Add PSU/defence: BHEL, DRDO, HAL, BEL — large retired PSU workforce in Hyderabad <span class="reco-priority p-high">High</span></span></li>
+        <li><span class="reco-icon">🧪</span><span>Split: 40–55 (children buyers) vs 55–65 (self-buyers) with different copy angles <span class="reco-priority p-test">Test</span></span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 06: CREATIVE ANALYSIS ═══ -->
+<section id="creative" class="section">
+  <div class="section-header">
+    <span class="section-num">06</span>
+    <h2 class="section-title">Creative Analysis</h2>
+    <span class="section-sub">Ad-level performance · {{ date_start }} – {{ date_end }}</span>
+  </div>
+  <div class="two-col" style="margin-bottom:24px">
+    <div class="card">
+      <div class="card-title">Top Performing Ads <span class="tag tag-best">BY LEADS</span></div>
+      <div class="ad-list">
+        {% set top_max = top_ads[0].leads if top_ads else 1 %}
+        {% for a in top_ads %}
+        <div class="ad-row">
+          <div class="ad-rank">#{{ loop.index }}</div>
+          <div>
+            <div class="ad-name">{{ a.name[:36] }}</div>
+            <div class="ad-account">{{ a.campaign_name[:30] if a.campaign_name else a.account_name }}</div>
+            <div class="lead-bar-wrap"><div class="lead-bar {% if a.account_badge=='GT' %}bar-gold{% else %}bar-teal{% endif %}" style="width:{{ (a.leads/top_max*100)|int }}%"></div></div>
+          </div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--gold)">{{ a.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:{{ a.cpl_color }}">{{ a.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ a.ctr_fmt }}</div><div class="ad-metric-label">CTR</div></div>
+        </div>
+        {% else %}<div style="color:var(--muted);font-size:13px;padding:20px 0">No ad data available.</div>{% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Highest CPL Ads <span class="tag tag-worst">NEEDS ATTENTION</span></div>
+      <div class="ad-list">
+        {% for a in bottom_ads %}
+        <div class="ad-row">
+          <div class="ad-rank worst">#{{ loop.index }}</div>
+          <div>
+            <div class="ad-name">{{ a.name[:36] }}</div>
+            <div class="ad-account">{{ a.campaign_name[:30] if a.campaign_name else a.account_name }}</div>
+          </div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--red)">{{ a.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ a.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ a.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
+        </div>
+        {% else %}<div style="color:var(--muted);font-size:13px;padding:20px 0">No ad data available.</div>{% endfor %}
+      </div>
+    </div>
+  </div>
+  {% if top_ads %}
+  <div class="card">
+    <div class="card-title">Creative Performance Charts <span style="font-size:11px;color:var(--muted);font-family:'DM Sans',sans-serif;font-weight:400">Current vs Previous Period</span></div>
+    <div class="two-col" style="gap:20px">
+      <div class="chart-wrap" style="height:260px"><canvas id="creativeLeadsChart"></canvas></div>
+      <div class="chart-wrap" style="height:260px"><canvas id="creativeCplChart"></canvas></div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+<!-- ═══ 07: APPENDIX ═══ -->
+<section id="appendix" class="section">
+  <div class="section-header">
+    <span class="section-num">07</span>
+    <h2 class="section-title">Appendix — Full Campaign Drill-Down</h2>
+    <span class="section-sub">Click any campaign row to expand its Ad Sets</span>
+  </div>
+  {% if campaigns %}
+  <div class="appendix-wrap">
+    <table class="app-table">
+      <thead>
+        <tr>
+          <th></th><th>Campaign / Ad Set</th>
+          <th>Impressions</th><th>Reach</th><th>Clicks</th><th>CTR</th>
+          <th>Spend</th><th>Leads</th><th>CPL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in campaigns %}
+        <tr class="drill-row" onclick="toggleDrill('{{ loop.index }}')">
+          <td><span class="drill-toggle" id="toggle-{{ loop.index }}">▶</span></td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:500">{{ c.name[:48] }}</span>
+              <span class="acct-badge {% if c.account_badge=='GT' %}gt-badge{% else %}bm-badge{% endif %}">{{ c.account_badge }}</span>
+              {% if c.is_new %}<span class="badge-new">New</span>{% endif %}
+            </div>
+          </td>
+          <td class="mono">{{ c.impr_fmt }}</td>
+          <td class="mono">{{ c.reach_fmt }}</td>
+          <td class="mono">{{ c.clicks }}</td>
+          <td class="mono">{{ c.ctr_fmt }}</td>
+          <td class="mono">{{ c.spend_fmt }}</td>
+          <td style="font-family:'Playfair Display',serif;font-size:14px;font-weight:700;color:{% if c.leads>=100 %}var(--gold){% elif c.leads>=30 %}var(--amber){% else %}var(--text){% endif %}">{{ c.leads }}</td>
+          <td class="mono" style="font-weight:600;color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</td>
+        </tr>
+        <tr class="drill-sub" id="drill-{{ loop.index }}" style="display:none">
+          <td colspan="9">
+            {% set adsets = adsets_by_campaign.get(c.id, []) %}
+            {% if adsets %}
+            <table class="adset-table">
+              <tbody>
+                {% for a in adsets %}
+                <tr>
+                  <td style="border-left:3px solid {% if c.account_badge=='GT' %}var(--gold){% else %}var(--teal){% endif %};background:rgba(0,0,0,0.1)">
+                    {{ a.name[:50] }}
+                  </td>
+                  <td class="mono">{{ a.impr_fmt }}</td>
+                  <td class="mono">{{ a.reach_fmt }}</td>
+                  <td class="mono">{{ a.clicks }}</td>
+                  <td class="mono">{{ a.ctr_fmt }}</td>
+                  <td class="mono">{{ a.spend_fmt }}</td>
+                  <td style="font-family:'Playfair Display',serif;font-weight:700">{{ a.leads }}</td>
+                  <td class="mono" style="font-weight:600;color:{{ a.cpl_color }}">{{ a.cpl_fmt }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div style="padding:14px 36px;font-size:12px;color:var(--muted)">No ad set data for this campaign.</div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">📋</div><div>No data available.</div></div>
+  {% endif %}
+</section>
+
+
+
+</div><!-- /main -->
+
+<div class="footer">
+  <div>GT Bharathi Projects (act_522598556166911) · Bharathi Meraki (act_991827431878117)</div>
+  <div>LEAD DATA: action_type="lead" · 7d_click + 1d_view attribution · Meta Ads API v21</div>
+</div>
+
+<script>
+// ─── Date picker ─────────────────────────────────────────
+const fp = flatpickr("#date-range-picker", {
+  mode:"range", dateFormat:"Y-m-d",
+  defaultDate:["{{ date_start }}","{{ date_end }}"],
+  maxDate:"{{ today }}",
+  onChange(dates) {
+    if (dates.length === 2) {
+      const fmt = d => d.toISOString().slice(0,10);
+      document.getElementById("inp-start").value = fmt(dates[0]);
+      document.getElementById("inp-end").value   = fmt(dates[1]);
+    }
+  }
+});
+function setRange(days, preset) {
+  const today = new Date("{{ today }}");
+  let start, end;
+  if (preset==='week') {
+    const d = today.getDay() || 7;
+    start = new Date(today); start.setDate(today.getDate()-d+1); end = today;
+  } else if (preset==='month') {
+    start = new Date(today.getFullYear(), today.getMonth(), 1); end = today;
+  } else {
+    end = today; start = new Date(today); start.setDate(today.getDate()-days+1);
+  }
+  const fmt = d => d.toISOString().slice(0,10);
+  fp.setDate([fmt(start), fmt(end)]);
+  document.getElementById("inp-start").value = fmt(start);
+  document.getElementById("inp-end").value   = fmt(end);
+}
+document.getElementById("date-form").addEventListener("submit", () => {
+  document.getElementById("loading-overlay").classList.add("active");
+});
+
+// ─── Campaign navigation ─────────────────────────────────
+function goToCampaign(id, name) {
+  const s = document.getElementById("inp-start").value || "{{ date_start }}";
+  const e = document.getElementById("inp-end").value   || "{{ date_end }}";
+  document.getElementById("loading-overlay").classList.add("active");
+  window.location.href = `/campaign/${id}?date_start=${s}&date_end=${e}&name=${encodeURIComponent(name)}`;
+}
+document.querySelectorAll('tr.camp-row[data-id]').forEach(row => {
+  row.addEventListener('click', () => {
+    goToCampaign(row.dataset.id, row.dataset.name);
+  });
+});
+
+// ─── Appendix drill-down ─────────────────────────────────
+function toggleDrill(idx) {
+  const row    = document.getElementById('drill-'  + idx);
+  const toggle = document.getElementById('toggle-' + idx);
+  if (row.style.display === 'none') {
+    row.style.display = 'table-row';
+    toggle.style.transform = 'rotate(90deg)';
+    toggle.style.color = 'var(--gold)';
+  } else {
+    row.style.display = 'none';
+    toggle.style.transform = 'rotate(0)';
+    toggle.style.color = 'var(--muted)';
+  }
+}
+
+// ─── Charts ──────────────────────────────────────────────
+const gold='#c9a227', teal='#2dd4c4', red='#f56060', green='#4ade80', amber='#fbbf24';
+const muted='rgba(255,255,255,0.35)', gridColor='rgba(255,255,255,0.05)';
+Chart.defaults.color = muted;
+Chart.defaults.font.family = "'DM Mono',monospace";
+Chart.defaults.font.size = 11;
+
+const ttOpts = {backgroundColor:'#1c1c28',borderColor:'rgba(255,255,255,0.08)',borderWidth:1,titleColor:'#fff',bodyColor:muted,padding:10};
+const axisX  = {grid:{color:gridColor},ticks:{color:muted,maxRotation:30}};
+const axisY  = {grid:{color:gridColor},ticks:{color:muted}};
+const axisYinr = {grid:{color:gridColor},ticks:{color:muted,callback:v=>'₹'+v}};
+const legendOpts = {display:true,labels:{color:muted,usePointStyle:true,boxWidth:10}};
+
+{% if campaigns %}
+const camps = {{ campaigns | tojson }};
+const cLabels = camps.map(c => c.name.slice(0,18));
+const cBgs    = camps.map(c => c.account_badge==='GT' ? gold+'cc' : teal+'cc');
+
+// WoW
+const wLabels = {{ wow_names | tojson }};
+const wCwL = {{ wow_cw_leads | tojson }};
+const wPwL = {{ wow_pw_leads | tojson }};
+const wCwC = {{ wow_cw_cpl | tojson }};
+const wPwC = {{ wow_pw_cpl | tojson }};
+
+new Chart(document.getElementById('wowLeadsChart'),{
+  type:'bar',
+  data:{labels:wLabels,datasets:[
+    {label:'Current Period',data:wCwL,backgroundColor:gold+'cc',borderRadius:4},
+    {label:'Previous Period',data:wPwL,backgroundColor:'rgba(255,255,255,0.1)',borderRadius:4}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:legendOpts,tooltip:ttOpts},scales:{x:axisX,y:axisY}}
+});
+new Chart(document.getElementById('wowCplChart'),{
+  type:'bar',
+  data:{labels:wLabels,datasets:[
+    {label:'Current CPL',data:wCwC,backgroundColor:teal+'cc',borderRadius:4},
+    {label:'Previous CPL',data:wPwC,backgroundColor:'rgba(255,255,255,0.1)',borderRadius:4}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:legendOpts,tooltip:ttOpts},scales:{x:axisX,y:axisYinr}}
+});
+{% endif %}
+
+// Gender donut
+{% if gender_rows %}
+new Chart(document.getElementById('genderChart'),{
+  type:'doughnut',
+  data:{
+    labels:{{ gender_rows | map(attribute='segment') | list | tojson }},
+    datasets:[{
+      data:{{ gender_rows | map(attribute='leads') | list | tojson }},
+      backgroundColor:[gold+'cc',teal+'cc','#a78bfa99'],
+      borderColor:'transparent',hoverOffset:6
+    }]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:true,position:'right',labels:{color:muted,usePointStyle:true}},tooltip:ttOpts}
+  }
+});
+{% endif %}
+
+// Creative charts — grouped CW vs PW
+const topAdsData = {{ top_ads | tojson | safe }};
+if (topAdsData && topAdsData.length > 0) {
+  const aLabels = topAdsData.map(a => a.name.slice(0,18));
+  new Chart(document.getElementById('creativeLeadsChart'),{
+    type:'bar',
+    data:{labels:aLabels,datasets:[
+      {label:'Current Period',data:topAdsData.map(a=>a.leads),backgroundColor:gold+'cc',borderRadius:4},
+      {label:'Previous Period',data:topAdsData.map(a=>a.pw_leads||0),backgroundColor:'rgba(255,255,255,0.1)',borderRadius:4}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:legendOpts,tooltip:ttOpts},scales:{x:axisX,y:axisY}}
+  });
+  new Chart(document.getElementById('creativeCplChart'),{
+    type:'bar',
+    data:{labels:aLabels,datasets:[
+      {label:'Current CPL',data:topAdsData.map(a=>a.cpl||0),backgroundColor:topAdsData.map(a=>(a.cpl||0)<300?green:(a.cpl||0)<600?amber:red),borderRadius:4},
+      {label:'Previous CPL',data:topAdsData.map(a=>a.pw_cpl||0),backgroundColor:'rgba(255,255,255,0.1)',borderRadius:4}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:legendOpts,tooltip:ttOpts},scales:{x:axisX,y:axisYinr}}
+  });
+}
+
+// ─── Active quick-range button highlight ─────────────────
+(function() {
+  const ds = "{{ date_start }}";
+  const de = "{{ date_end }}";
+  const today = new Date("{{ today }}");
+  const fmt = d => d.toISOString().slice(0,10);
+
+  function rangeFor(days, preset) {
+    let start, end = today;
+    if (preset==='week') {
+      const d = today.getDay()||7;
+      start = new Date(today); start.setDate(today.getDate()-d+1);
+    } else if (preset==='month') {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+    } else {
+      start = new Date(today); start.setDate(today.getDate()-days+1);
+    }
+    return [fmt(start), fmt(end)];
+  }
+
+  const presets = [
+    {btn: document.querySelectorAll('.qr-btn')[0], range: rangeFor(7)},
+    {btn: document.querySelectorAll('.qr-btn')[1], range: rangeFor(14)},
+    {btn: document.querySelectorAll('.qr-btn')[2], range: rangeFor(30)},
+    {btn: document.querySelectorAll('.qr-btn')[3], range: rangeFor(0,'week')},
+    {btn: document.querySelectorAll('.qr-btn')[4], range: rangeFor(0,'month')},
+  ];
+  presets.forEach(({btn, range}) => {
+    if (btn && range[0] === ds && range[1] === de) btn.classList.add('active');
+  });
+})();// ─── Daily Leads Trend ────────────────────────────────────
+{% if daily_total %}
+const dailyDates  = {{ daily_dates | tojson }};
+const dailyLeads  = {{ daily_total | map(attribute='leads') | list | tojson }};
+const campSeries  = {{ camp_series | tojson | safe }};
+
+const shortDates = dailyDates.map(d => {
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+});
+
+new Chart(document.getElementById('dailyTotalChart'), {
+  type: 'line',
+  data: {
+    labels: shortDates,
+    datasets: [{
+      label: 'Total Leads',
+      data: dailyLeads,
+      borderColor: gold,
+      backgroundColor: 'rgba(201,162,39,0.12)',
+      fill: true,
+      tension: 0.4,
+      pointRadius: dailyDates.length <= 14 ? 4 : 2,
+      pointBackgroundColor: gold,
+      borderWidth: 2,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: ttOpts },
+    scales: {
+      x: { grid: { color: gridColor }, ticks: { color: muted, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } },
+      y: { grid: { color: gridColor }, ticks: { color: muted }, beginAtZero: true }
+    }
+  }
+});
+
+if (campSeries.length > 0) {
+  const campColors = [gold, teal, '#a78bfa', '#f472b6', amber];
+  new Chart(document.getElementById('dailyCampChart'), {
+    type: 'line',
+    data: {
+      labels: shortDates,
+      datasets: campSeries.map((s, i) => ({
+        label: s.name.slice(0, 22),
+        data: s.data,
+        borderColor: campColors[i % campColors.length],
+        backgroundColor: 'transparent',
+        tension: 0.4,
+        pointRadius: dailyDates.length <= 14 ? 3 : 1,
+        borderWidth: 2,
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { color: muted, usePointStyle: true, boxWidth: 10 } },
+        tooltip: ttOpts
+      },
+      scales: {
+        x: { grid: { color: gridColor }, ticks: { color: muted, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 } },
+        y: { grid: { color: gridColor }, ticks: { color: muted }, beginAtZero: true }
+      }
+    }
+  });
+}
+{% endif %}
+</script>
+</body>
+</html>
