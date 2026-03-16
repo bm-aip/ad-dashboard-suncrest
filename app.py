@@ -432,37 +432,10 @@ def merge_wow(cw_list, pw_list):
 
 # ─── GOOGLE ADS (via Anthropic API + TrueClicks MCP) ───────
 
-def get_google_ads_data(date_start, date_end):
-    """
-    Fetches Google Ads campaign data for Elements Ads (5195384554) by calling
-    the Anthropic API with the TrueClicks MCP server attached.
-    Returns a dict with 'campaigns' list and 'totals' summary, or None on failure.
-    """
+def _call_mcp(prompt, max_tokens=4000, timeout=50):
+    """Shared helper: call Anthropic API with TrueClicks MCP, return parsed JSON or None."""
     if not ANTHROPIC_API_KEY or not GOOGLE_ADS_MCP_URL:
-        print("[Google Ads] Skipped — ANTHROPIC_API_KEY or GOOGLE_ADS_MCP_URL not set.")
         return None
-
-    gaql = (
-        f"SELECT campaign.name, metrics.cost_micros, metrics.conversions, "
-        f"metrics.cost_per_conversion, metrics.clicks, metrics.impressions, metrics.ctr "
-        f"FROM campaign "
-        f"WHERE segments.date BETWEEN '{date_start}' AND '{date_end}' "
-        f"AND metrics.impressions > 0 "
-        f"ORDER BY metrics.conversions DESC"
-    )
-
-    prompt = (
-        f"Use the Google Ads MCP tool to download a report for customer ID {GOOGLE_ADS_CID}.\n\n"
-        f"Run this GAQL query:\n{gaql}\n\n"
-        "Return ONLY a valid JSON object — no markdown, no backticks, no explanation — using this exact structure:\n"
-        '{"campaigns":[{"name":"","spend":0.0,"conversions":0,"cpl":null,"clicks":0,"impressions":0,"ctr":0.0}],'
-        '"totals":{"spend":0.0,"conversions":0,"cpl":null,"clicks":0,"impressions":0,"ctr":0.0}}\n\n'
-        "Rules: divide cost_micros by 1000000 for spend. "
-        "cpl = spend/conversions if conversions > 0 else null. "
-        "ctr should be a percentage value (e.g. 2.5 for 2.5%). "
-        "Include all campaigns returned, even if conversions = 0."
-    )
-
     try:
         resp = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -474,58 +447,164 @@ def get_google_ads_data(date_start, date_end):
             },
             json={
                 "model": "claude-sonnet-4-20250514",
-                "max_tokens": 3000,
+                "max_tokens": max_tokens,
                 "mcp_servers": [{"type": "url", "url": GOOGLE_ADS_MCP_URL, "name": "google-ads"}],
                 "messages": [{"role": "user", "content": prompt}],
             },
-            timeout=45,
+            timeout=timeout,
         )
         if resp.status_code != 200:
             print(f"[Google Ads MCP] HTTP {resp.status_code}: {resp.text[:300]}")
             return None
-
         data = resp.json()
-        text = ""
-        for block in data.get("content", []):
-            if block.get("type") == "text":
-                text += block.get("text", "")
-
-        # Strip any accidental markdown fences
-        text = text.strip()
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+        # Strip markdown fences
         if "```" in text:
-            parts = text.split("```")
-            for part in parts:
-                part = part.strip()
-                if part.startswith("json"):
-                    part = part[4:].strip()
+            for part in text.split("```"):
+                part = part.strip().lstrip("json").strip()
                 if part.startswith("{"):
                     text = part
                     break
-
-        parsed = json.loads(text.strip())
-
-        # Enrich campaigns with display helpers
-        for c in parsed.get("campaigns", []):
-            c["spend_fmt"] = fmt_inr(c.get("spend"))
-            cpl = c.get("cpl")
-            c["cpl_fmt"]   = f"₹{int(cpl)}" if cpl else "—"
-            c["cpl_color"] = cpl_color(cpl)
-            ctr = c.get("ctr", 0)
-            c["ctr_fmt"]   = f"{ctr:.2f}%"
-
-        # Enrich totals
-        t = parsed.get("totals", {})
-        t["spend_fmt"] = fmt_inr(t.get("spend"))
-        tcpl = t.get("cpl")
-        t["cpl_fmt"]   = f"₹{int(tcpl)}" if tcpl else "—"
-        t["cpl_color"] = cpl_color(tcpl)
-        t["ctr_fmt"]   = f"{t.get('ctr', 0):.2f}%"
-
-        return parsed
-
+        return json.loads(text)
     except Exception as e:
         print(f"[Google Ads MCP] Error: {e}")
         return None
+
+
+def get_google_ads_data(date_start, date_end):
+    """
+    Fetches Google Ads data for Elements Ads (5195384554):
+      - Campaign metrics (ENABLED campaigns only)
+      - Age + gender demographic breakdowns
+    Returns a dict with 'campaigns', 'totals', 'age_rows', 'gender_rows', or None on failure.
+    """
+    if not ANTHROPIC_API_KEY or not GOOGLE_ADS_MCP_URL:
+        print("[Google Ads] Skipped — ANTHROPIC_API_KEY or GOOGLE_ADS_MCP_URL not set.")
+        return None
+
+    # ── Query 1: Campaign metrics — ENABLED campaigns only ──
+    camp_gaql = (
+        f"SELECT campaign.name, metrics.cost_micros, metrics.conversions, "
+        f"metrics.cost_per_conversion, metrics.clicks, metrics.impressions, metrics.ctr "
+        f"FROM campaign "
+        f"WHERE segments.date BETWEEN '{date_start}' AND '{date_end}' "
+        f"AND campaign.status = 'ENABLED' "
+        f"AND metrics.impressions > 0 "
+        f"ORDER BY metrics.conversions DESC"
+    )
+    camp_prompt = (
+        f"Use the Google Ads MCP tool to download a report for customer ID {GOOGLE_ADS_CID}.\n\n"
+        f"Run this GAQL query:\n{camp_gaql}\n\n"
+        "Return ONLY a valid JSON object — no markdown, no backticks, no explanation — using this exact structure:\n"
+        '{"campaigns":[{"name":"","spend":0.0,"conversions":0,"cpl":null,"clicks":0,"impressions":0,"ctr":0.0}],'
+        '"totals":{"spend":0.0,"conversions":0,"cpl":null,"clicks":0,"impressions":0,"ctr":0.0}}\n\n'
+        "Rules: divide cost_micros by 1000000 for spend. "
+        "cpl = spend/conversions if conversions > 0 else null. "
+        "ctr is a percentage value (e.g. 2.5 for 2.5%). "
+        "Only include ENABLED campaigns."
+    )
+
+    # ── Query 2: Age demographics ──
+    age_gaql = (
+        f"SELECT ad_group_criterion.age_range.type, metrics.cost_micros, metrics.conversions, "
+        f"metrics.impressions, metrics.clicks "
+        f"FROM age_range_view "
+        f"WHERE segments.date BETWEEN '{date_start}' AND '{date_end}' "
+        f"AND campaign.status = 'ENABLED' "
+        f"ORDER BY metrics.conversions DESC"
+    )
+    age_prompt = (
+        f"Use the Google Ads MCP tool to download a report for customer ID {GOOGLE_ADS_CID}.\n\n"
+        f"Run this GAQL query:\n{age_gaql}\n\n"
+        "Return ONLY a valid JSON array — no markdown, no backticks, no explanation — using this exact structure:\n"
+        '[{"segment":"18-24","conversions":0,"spend":0.0,"impressions":0,"cpl":null}]\n\n'
+        "Rules: divide cost_micros by 1000000 for spend. "
+        "Map age_range.type to readable labels: AGE_RANGE_18_24 -> '18-24', AGE_RANGE_25_34 -> '25-34', "
+        "AGE_RANGE_35_44 -> '35-44', AGE_RANGE_45_54 -> '45-54', AGE_RANGE_55_64 -> '55-64', "
+        "AGE_RANGE_65_UP -> '65+', AGE_RANGE_UNDETERMINED -> 'Unknown'. "
+        "Aggregate across all campaigns. cpl = spend/conversions if conversions > 0 else null."
+    )
+
+    # ── Query 3: Gender demographics ──
+    gender_gaql = (
+        f"SELECT ad_group_criterion.gender.type, metrics.cost_micros, metrics.conversions, "
+        f"metrics.impressions, metrics.clicks "
+        f"FROM gender_view "
+        f"WHERE segments.date BETWEEN '{date_start}' AND '{date_end}' "
+        f"AND campaign.status = 'ENABLED'"
+    )
+    gender_prompt = (
+        f"Use the Google Ads MCP tool to download a report for customer ID {GOOGLE_ADS_CID}.\n\n"
+        f"Run this GAQL query:\n{gender_gaql}\n\n"
+        "Return ONLY a valid JSON array — no markdown, no backticks, no explanation — using this exact structure:\n"
+        '[{"segment":"Male","conversions":0,"spend":0.0,"impressions":0,"cpl":null,"pct":0.0}]\n\n'
+        "Rules: divide cost_micros by 1000000 for spend. "
+        "Map gender.type: MALE -> 'Male', FEMALE -> 'Female', UNDETERMINED -> 'Unknown'. "
+        "Aggregate across all campaigns. cpl = spend/conversions if conversions > 0 else null. "
+        "pct = conversions / total_conversions * 100 (rounded to 1 decimal). Exclude UNDETERMINED if 0 conversions."
+    )
+
+    # Fire all three queries
+    camp_data    = _call_mcp(camp_prompt, max_tokens=3000, timeout=50)
+    age_data     = _call_mcp(age_prompt,  max_tokens=2000, timeout=50)
+    gender_data  = _call_mcp(gender_prompt, max_tokens=1500, timeout=45)
+
+    if not camp_data:
+        return None
+
+    # Enrich campaign rows
+    for c in camp_data.get("campaigns", []):
+        c["spend_fmt"] = fmt_inr(c.get("spend"))
+        cpl = c.get("cpl")
+        c["cpl_fmt"]   = f"₹{int(cpl)}" if cpl else "—"
+        c["cpl_color"] = cpl_color(cpl)
+        c["ctr_fmt"]   = f"{c.get('ctr', 0):.2f}%"
+
+    # Enrich totals
+    t = camp_data.get("totals", {})
+    t["spend_fmt"] = fmt_inr(t.get("spend"))
+    tcpl = t.get("cpl")
+    t["cpl_fmt"]   = f"₹{int(tcpl)}" if tcpl else "—"
+    t["cpl_color"] = cpl_color(tcpl)
+    t["ctr_fmt"]   = f"{t.get('ctr', 0):.2f}%"
+
+    # Enrich age rows
+    age_rows = []
+    if isinstance(age_data, list):
+        max_conv = max((r.get("conversions", 0) for r in age_data), default=1) or 1
+        for r in age_data:
+            if r.get("segment") == "Unknown" and r.get("conversions", 0) == 0:
+                continue
+            cpl_val = r.get("cpl")
+            age_rows.append({
+                "segment":    r.get("segment", ""),
+                "conversions": r.get("conversions", 0),
+                "spend_fmt":  fmt_inr(r.get("spend", 0)),
+                "impr_fmt":   fmt_num(r.get("impressions", 0)),
+                "cpl_fmt":    f"₹{int(cpl_val)}" if cpl_val else "—",
+                "cpl_color":  cpl_color(cpl_val),
+                "bar_pct":    int(r.get("conversions", 0) / max_conv * 100),
+            })
+
+    # Enrich gender rows
+    gender_rows = []
+    if isinstance(gender_data, list):
+        for r in gender_data:
+            if r.get("segment") == "Unknown":
+                continue
+            cpl_val = r.get("cpl")
+            gender_rows.append({
+                "segment":    r.get("segment", ""),
+                "conversions": r.get("conversions", 0),
+                "pct":        r.get("pct", 0),
+                "spend_fmt":  fmt_inr(r.get("spend", 0)),
+                "cpl_fmt":    f"₹{int(cpl_val)}" if cpl_val else "—",
+                "cpl_color":  cpl_color(cpl_val),
+            })
+
+    camp_data["age_rows"]    = age_rows
+    camp_data["gender_rows"] = gender_rows
+    return camp_data
 
 
 # ─── ROUTES ────────────────────────────────────────────────

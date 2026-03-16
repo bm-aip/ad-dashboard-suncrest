@@ -548,22 +548,46 @@
   <div class="section-header">
     <span class="section-num">03</span>
     <h2 class="section-title">Top & Bottom Campaigns</h2>
-    <span class="section-sub">By lead volume & CPL · {{ date_start }} – {{ date_end }}</span>
+    <span class="section-sub">Meta + Google · By lead volume & CPL · {{ date_start }} – {{ date_end }}</span>
   </div>
+
+  {# Build unified list: Meta campaigns + Google campaigns, sorted by leads/conversions #}
+  {% set all_camps = [] %}
+  {% for c in campaigns %}
+    {% set _ = all_camps.append({'name': c.name, 'account': c.account_name, 'platform': 'Meta',
+       'leads': c.leads, 'cpl': c.cpl, 'cpl_fmt': c.cpl_fmt, 'cpl_color': c.cpl_color,
+       'spend_fmt': c.spend_fmt}) %}
+  {% endfor %}
+  {% if gads_data and gads_data.campaigns %}
+    {% for c in gads_data.campaigns %}
+      {% set _ = all_camps.append({'name': c.name, 'account': 'Elements Ads', 'platform': 'Google',
+         'leads': c.conversions, 'cpl': c.cpl, 'cpl_fmt': c.cpl_fmt, 'cpl_color': c.cpl_color,
+         'spend_fmt': c.spend_fmt}) %}
+    {% endfor %}
+  {% endif %}
+  {% set all_by_leads = all_camps | sort(attribute='leads', reverse=true) %}
+  {% set all_by_leads_asc = all_camps | sort(attribute='leads') %}
+  {% set all_with_cpl = all_camps | selectattr('cpl') | list %}
+  {% set all_best_cpl = all_with_cpl | sort(attribute='cpl') %}
+  {% set all_worst_cpl = all_with_cpl | sort(attribute='cpl', reverse=true) %}
+  {% set max_leads = all_by_leads[0].leads if all_by_leads else 1 %}
+
   <div class="two-col" style="margin-bottom:24px">
     <div class="card">
       <div class="card-title">Best by Lead Volume <span class="tag tag-best">TOP 5</span></div>
       <div class="ad-list">
-        {% set max_leads = top_by_leads[0].leads if top_by_leads else 1 %}
-        {% for c in top_by_leads %}
+        {% for c in all_by_leads[:5] %}
         <div class="ad-row">
           <div class="ad-rank">#{{ loop.index }}</div>
           <div>
             <div class="ad-name">{{ c.name[:36] }}</div>
-            <div class="ad-account"><span class="plt-badge meta-badge">Meta</span> {{ c.account_name }}</div>
-            <div class="lead-bar-wrap"><div class="lead-bar bar-gold" style="width:{{ (c.leads/max_leads*100)|int }}%"></div></div>
+            <div class="ad-account">
+              {% if c.platform == 'Meta' %}<span class="plt-badge meta-badge">Meta</span>{% else %}<span class="plt-badge google-badge">Google</span>{% endif %}
+              {{ c.account }}
+            </div>
+            <div class="lead-bar-wrap"><div class="lead-bar {% if c.platform == 'Meta' %}bar-gold{% else %}bar-blue{% endif %}" style="width:{{ (c.leads/max_leads*100)|int }}%"></div></div>
           </div>
-          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--gold-light);font-size:16px">{{ c.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:{% if c.platform=='Meta' %}var(--gold-light){% else %}var(--blue){% endif %};font-size:16px">{{ c.leads }}</div><div class="ad-metric-label">{% if c.platform=='Meta' %}Leads{% else %}Conv.{% endif %}</div></div>
           <div class="ad-metric"><div class="ad-metric-val" style="color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
           <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
         </div>
@@ -573,14 +597,17 @@
     <div class="card">
       <div class="card-title">Lowest Lead Volume <span class="tag tag-worst">BOTTOM 5</span></div>
       <div class="ad-list">
-        {% for c in worst_by_leads %}
+        {% for c in all_by_leads_asc[:5] %}
         <div class="ad-row">
           <div class="ad-rank worst">#{{ loop.index }}</div>
           <div>
             <div class="ad-name">{{ c.name[:36] }}</div>
-            <div class="ad-account"><span class="plt-badge meta-badge">Meta</span> {{ c.account_name }}</div>
+            <div class="ad-account">
+              {% if c.platform == 'Meta' %}<span class="plt-badge meta-badge">Meta</span>{% else %}<span class="plt-badge google-badge">Google</span>{% endif %}
+              {{ c.account }}
+            </div>
           </div>
-          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--red)">{{ c.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--red)">{{ c.leads }}</div><div class="ad-metric-label">{% if c.platform=='Meta' %}Leads{% else %}Conv.{% endif %}</div></div>
           <div class="ad-metric"><div class="ad-metric-val" style="color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
           <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
         </div>
@@ -592,12 +619,15 @@
     <div class="card">
       <div class="card-title">Best CPL <span class="tag tag-best">TOP 5</span></div>
       <div class="ad-list">
-        {% for c in best_by_cpl %}
+        {% for c in all_best_cpl[:5] %}
         <div class="ad-row">
           <div class="ad-rank">#{{ loop.index }}</div>
-          <div><div class="ad-name">{{ c.name[:36] }}</div><div class="ad-account"><span class="plt-badge meta-badge">Meta</span> {{ c.account_name }}</div></div>
+          <div>
+            <div class="ad-name">{{ c.name[:36] }}</div>
+            <div class="ad-account">{% if c.platform == 'Meta' %}<span class="plt-badge meta-badge">Meta</span>{% else %}<span class="plt-badge google-badge">Google</span>{% endif %} {{ c.account }}</div>
+          </div>
           <div class="ad-metric"><div class="ad-metric-val" style="color:var(--green)">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
-          <div class="ad-metric"><div class="ad-metric-val" style="color:var(--gold-light)">{{ c.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val" style="color:{% if c.platform=='Meta' %}var(--gold-light){% else %}var(--blue){% endif %}">{{ c.leads }}</div><div class="ad-metric-label">{% if c.platform=='Meta' %}Leads{% else %}Conv.{% endif %}</div></div>
           <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
         </div>
         {% else %}<div style="color:var(--muted);font-size:13px;padding:20px 0">No data</div>{% endfor %}
@@ -606,43 +636,21 @@
     <div class="card">
       <div class="card-title">Worst CPL <span class="tag tag-worst">BOTTOM 5</span></div>
       <div class="ad-list">
-        {% for c in worst_by_cpl %}
+        {% for c in all_worst_cpl[:5] %}
         <div class="ad-row">
           <div class="ad-rank worst">#{{ loop.index }}</div>
-          <div><div class="ad-name">{{ c.name[:36] }}</div><div class="ad-account"><span class="plt-badge meta-badge">Meta</span> {{ c.account_name }}</div></div>
+          <div>
+            <div class="ad-name">{{ c.name[:36] }}</div>
+            <div class="ad-account">{% if c.platform == 'Meta' %}<span class="plt-badge meta-badge">Meta</span>{% else %}<span class="plt-badge google-badge">Google</span>{% endif %} {{ c.account }}</div>
+          </div>
           <div class="ad-metric"><div class="ad-metric-val" style="color:var(--red)">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
-          <div class="ad-metric"><div class="ad-metric-val">{{ c.leads }}</div><div class="ad-metric-label">Leads</div></div>
+          <div class="ad-metric"><div class="ad-metric-val">{{ c.leads }}</div><div class="ad-metric-label">{% if c.platform=='Meta' %}Leads{% else %}Conv.{% endif %}</div></div>
           <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
         </div>
         {% else %}<div style="color:var(--muted);font-size:13px;padding:20px 0">No data</div>{% endfor %}
       </div>
     </div>
   </div>
-  {% if gads_data and gads_data.campaigns %}
-  <div style="margin-top:24px">
-    <div class="section-divider">
-      <div class="section-divider-line"></div>
-      <div class="section-divider-label" style="color:var(--blue)">● Google Ads — by Conversions</div>
-      <div class="section-divider-line"></div>
-    </div>
-    <div class="ad-list">
-      {% set max_gads = gads_data.campaigns|map(attribute='conversions')|max %}
-      {% for c in gads_data.campaigns|sort(attribute='conversions',reverse=true) %}
-      <div class="ad-row">
-        <div class="ad-rank" style="color:var(--blue)">#{{ loop.index }}</div>
-        <div>
-          <div class="ad-name">{{ c.name }}</div>
-          <div class="ad-account"><span class="plt-badge google-badge">Google</span> Elements Ads</div>
-          <div class="lead-bar-wrap"><div class="lead-bar bar-blue" style="width:{{ (c.conversions/max_gads*100)|int if max_gads > 0 else 0 }}%"></div></div>
-        </div>
-        <div class="ad-metric"><div class="ad-metric-val" style="color:var(--blue)">{{ c.conversions }}</div><div class="ad-metric-label">Conv.</div></div>
-        <div class="ad-metric"><div class="ad-metric-val" style="color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</div><div class="ad-metric-label">CPL</div></div>
-        <div class="ad-metric"><div class="ad-metric-val">{{ c.spend_fmt }}</div><div class="ad-metric-label">Spend</div></div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
 </section>
 
 <!-- ═══ 04: WEEK-ON-WEEK ═══ -->
@@ -802,53 +810,55 @@
   <!-- GOOGLE TARGETING -->
   <div id="targeting-google" style="display:none">
     {% if gads_data %}
-    <div class="two-col" style="margin-bottom:24px">
+    <div class="two-col">
+      <!-- Age breakdown -->
       <div class="card">
-        <div class="card-title">Campaign Type Performance <span class="plt-badge google-badge">Google</span></div>
+        <div class="card-title">Age Group Performance <span class="plt-badge google-badge">Google</span></div>
+        {% if gads_data.age_rows %}
         <div class="age-grid">
           <div class="age-row-grid" style="margin-bottom:4px">
-            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)">Type</div>
+            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)">Age</div>
             <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted)">Conv.</div>
             <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);text-align:right">Spend</div>
-            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);text-align:right">Clicks</div>
+            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);text-align:right">Impr.</div>
             <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);text-align:right">CPL</div>
           </div>
-          {% set gads_max_conv = gads_data.campaigns|map(attribute='conversions')|max if gads_data.campaigns else 1 %}
-          {% for c in gads_data.campaigns %}
+          {% for r in gads_data.age_rows %}
           <div class="age-row-grid">
-            <div class="age-label">{{ c.name[:10] }}</div>
+            <div class="age-label">{{ r.segment }}</div>
             <div>
-              <div class="age-bar-wrap"><div class="age-bar bar-blue" style="width:{{ (c.conversions/gads_max_conv*100)|int if gads_max_conv > 0 else 0 }}%"></div></div>
-              <div style="font-size:10px;color:var(--muted);margin-top:3px">{{ c.conversions }}</div>
+              <div class="age-bar-wrap"><div class="age-bar bar-blue" style="width:{{ r.bar_pct }}%"></div></div>
+              <div style="font-size:10px;color:var(--muted);margin-top:3px">{{ r.conversions }}</div>
             </div>
-            <div class="age-val">{{ c.spend_fmt }}</div>
-            <div class="age-val">{{ fmt_num(c.clicks) }}</div>
-            <div class="age-cpl" style="color:{{ c.cpl_color }}">{{ c.cpl_fmt }}</div>
+            <div class="age-val">{{ r.spend_fmt }}</div>
+            <div class="age-val">{{ r.impr_fmt }}</div>
+            <div class="age-cpl" style="color:{{ r.cpl_color }}">{{ r.cpl_fmt }}</div>
           </div>
           {% endfor %}
         </div>
+        {% else %}
+        <div style="color:var(--muted);font-size:13px;padding:20px 0">Age breakdown not available — may require GAQL access to age_range_view.</div>
+        {% endif %}
       </div>
+      <!-- Gender breakdown -->
       <div class="card">
-        <div class="card-title">Overall Performance <span class="plt-badge google-badge">Google</span></div>
-        {% set gt = gads_data.totals %}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
-          <div style="background:var(--surface2);border-radius:8px;padding:16px;border:1px solid var(--border)">
-            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--blue);margin-bottom:6px">Total Conversions</div>
-            <div style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:var(--blue)">{{ gt.conversions }}</div>
+        <div class="card-title">Gender Split <span class="plt-badge google-badge">Google</span></div>
+        {% if gads_data.gender_rows %}
+        <div class="gender-pills">
+          {% for g in gads_data.gender_rows %}
+          <div class="gender-pill">
+            <div class="gender-pct" style="color:var(--blue)">{{ g.pct }}%</div>
+            <div class="gender-label">{{ g.segment }}</div>
+            <div class="gender-sub">{{ g.conversions }} conv.</div>
+            <div class="gender-sub" style="color:{{ g.cpl_color }}">CPL {{ g.cpl_fmt }}</div>
+            <div class="gender-sub">{{ g.spend_fmt }}</div>
           </div>
-          <div style="background:var(--surface2);border-radius:8px;padding:16px;border:1px solid var(--border)">
-            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Avg CPL</div>
-            <div style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:{{ gt.cpl_color }}">{{ gt.cpl_fmt }}</div>
-          </div>
-          <div style="background:var(--surface2);border-radius:8px;padding:16px;border:1px solid var(--border)">
-            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Total Spend</div>
-            <div style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:#fff">{{ gt.spend_fmt }}</div>
-          </div>
-          <div style="background:var(--surface2);border-radius:8px;padding:16px;border:1px solid var(--border)">
-            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:6px">CTR</div>
-            <div style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;color:#fff">{{ gt.ctr_fmt }}</div>
-          </div>
+          {% endfor %}
         </div>
+        <div class="chart-wrap" style="height:200px"><canvas id="googleGenderChart"></canvas></div>
+        {% else %}
+        <div style="color:var(--muted);font-size:13px;padding:20px 0">Gender breakdown not available for this date range.</div>
+        {% endif %}
       </div>
     </div>
     {% else %}
@@ -1292,7 +1302,7 @@ new Chart(document.getElementById('wowCplChart'),{
 });
 {% endif %}
 
-// Gender donut
+// Gender donut — Meta
 {% if gender_rows %}
 new Chart(document.getElementById('genderChart'),{
   type:'doughnut',
@@ -1301,6 +1311,25 @@ new Chart(document.getElementById('genderChart'),{
     datasets:[{
       data:{{ gender_rows | map(attribute='leads') | list | tojson }},
       backgroundColor:[gold+'cc',teal+'cc','#a78bfa99'],
+      borderColor:'transparent',hoverOffset:6
+    }]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:true,position:'right',labels:{color:muted,usePointStyle:true}},tooltip:ttOpts}
+  }
+});
+{% endif %}
+
+// Gender donut — Google
+{% if gads_data and gads_data.gender_rows %}
+new Chart(document.getElementById('googleGenderChart'),{
+  type:'doughnut',
+  data:{
+    labels:{{ gads_data.gender_rows | map(attribute='segment') | list | tojson }},
+    datasets:[{
+      data:{{ gads_data.gender_rows | map(attribute='conversions') | list | tojson }},
+      backgroundColor:['rgba(66,133,244,0.8)','rgba(66,133,244,0.4)'],
       borderColor:'transparent',hoverOffset:6
     }]
   },
