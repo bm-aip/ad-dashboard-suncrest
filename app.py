@@ -575,11 +575,12 @@ def get_google_ads_data(date_start, date_end):
         camp  = row.get("campaign", {}) if isinstance(row, dict) else {}
         met   = row.get("metrics",  {}) if isinstance(row, dict) else {}
         name  = camp.get("name", "Unknown")
-        spend = micros_to_inr(met.get("cost_micros", 0))
+        spend = micros_to_inr(met.get("cost_micros") or met.get("costMicros", 0))
         conv  = safe_int(met.get("conversions", 0))
         clicks = safe_int(met.get("clicks", 0))
         impr  = safe_int(met.get("impressions", 0))
-        ctr   = safe_float(met.get("ctr", 0)) * 100   # Google returns as decimal e.g. 0.047 → 4.7%
+        ctr_raw = safe_float(met.get("ctr", 0))
+        ctr   = ctr_raw * 100 if ctr_raw < 1 else ctr_raw  # handle both decimal and %
         cpl   = round(spend / conv, 2) if conv > 0 else None
 
         total_spend  += spend
@@ -618,14 +619,15 @@ def get_google_ads_data(date_start, date_end):
     # ── Parse age rows ──
     age_agg = {}
     for row in (age_rows_r if isinstance(age_rows_r, list) else []):
-        crit  = row.get("ad_group_criterion", {}) if isinstance(row, dict) else {}
+        crit  = row.get("ad_group_criterion", row.get("adGroupCriterion", {})) if isinstance(row, dict) else {}
         met   = row.get("metrics",            {}) if isinstance(row, dict) else {}
-        seg_raw = crit.get("age_range", {}).get("type", "Unknown") if isinstance(crit, dict) else "Unknown"
+        age_obj = crit.get("age_range", crit.get("ageRange", {})) if isinstance(crit, dict) else {}
+        seg_raw = age_obj.get("type", "Unknown") if isinstance(age_obj, dict) else "Unknown"
         seg   = AGE_MAP.get(seg_raw, "Unknown")
         if seg not in age_agg:
             age_agg[seg] = {"conversions": 0, "spend": 0.0, "impressions": 0}
         age_agg[seg]["conversions"] += safe_int(met.get("conversions", 0))
-        age_agg[seg]["spend"]       += micros_to_inr(met.get("cost_micros", 0))
+        age_agg[seg]["spend"]       += micros_to_inr(met.get("cost_micros") or met.get("costMicros", 0))
         age_agg[seg]["impressions"] += safe_int(met.get("impressions", 0))
 
     max_conv_age = max((v["conversions"] for v in age_agg.values()), default=1) or 1
@@ -647,16 +649,17 @@ def get_google_ads_data(date_start, date_end):
     # ── Parse gender rows ──
     gender_agg = {}
     for row in (gen_rows_r if isinstance(gen_rows_r, list) else []):
-        crit  = row.get("ad_group_criterion", {}) if isinstance(row, dict) else {}
+        crit  = row.get("ad_group_criterion", row.get("adGroupCriterion", {})) if isinstance(row, dict) else {}
         met   = row.get("metrics",            {}) if isinstance(row, dict) else {}
-        seg_raw = crit.get("gender", {}).get("type", "Unknown") if isinstance(crit, dict) else "Unknown"
+        gen_obj = crit.get("gender", {}) if isinstance(crit, dict) else {}
+        seg_raw = gen_obj.get("type", "Unknown") if isinstance(gen_obj, dict) else "Unknown"
         seg   = GENDER_MAP.get(seg_raw, "Unknown")
         if seg == "Unknown":
             continue
         if seg not in gender_agg:
             gender_agg[seg] = {"conversions": 0, "spend": 0.0}
         gender_agg[seg]["conversions"] += safe_int(met.get("conversions", 0))
-        gender_agg[seg]["spend"]       += micros_to_inr(met.get("cost_micros", 0))
+        gender_agg[seg]["spend"]       += micros_to_inr(met.get("cost_micros") or met.get("costMicros", 0))
 
     total_gender_conv = sum(v["conversions"] for v in gender_agg.values()) or 1
     gender_rows = []
