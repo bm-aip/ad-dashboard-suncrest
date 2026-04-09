@@ -1256,28 +1256,27 @@ def debug_google_ads():
         )
         steps.append(f"  HTTP status: {probe.status_code}")
         if probe.status_code == 200:
-            steps.append(f"  {ok} Connected — reading first SSE event...")
+            steps.append(f"  {ok} Connected — reading first 10 SSE lines...")
+            lines_read = 0
             endpoint_uri = None
             for raw in probe.iter_lines():
-                if not raw:
-                    continue
-                line = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+                if lines_read >= 10:
+                    break
+                lines_read += 1
+                line = raw.decode("utf-8") if isinstance(raw, bytes) else (raw or "")
+                steps.append(f"  Line {lines_read}: {repr(line[:150])}")
                 if line.startswith("data:"):
                     try:
                         data = json.loads(line[5:].strip())
                         if "uri" in data:
-                            endpoint_uri = data["uri"]
-                            break
+                            endpoint_uri = data.get("uri")
                     except Exception:
-                        steps.append(f"  Raw line: {line[:120]}")
-                        break
-                break  # read one line only for probe
+                        pass
             probe.close()
-
             if endpoint_uri:
-                steps.append(f"  {ok} Got endpoint URI: {endpoint_uri[:60]}...")
+                steps.append(f"  {ok} Found endpoint URI: {endpoint_uri[:80]}")
             else:
-                steps.append(f"  ⚠️  No endpoint URI in first event — will try full query anyway")
+                steps.append(f"  ⚠️  No endpoint URI found in first {lines_read} lines")
         else:
             steps.append(f"  {fail} HTTP {probe.status_code}: {probe.text[:200]}")
     except Exception as exc:
