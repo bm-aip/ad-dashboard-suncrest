@@ -1287,132 +1287,35 @@ def debug_google_ads():
 
     steps.append("")
 
-    # Step 2: Manual step-by-step MCP handshake
-    steps.append("Step 2 — Manual MCP handshake (step by step)...")
+    # Step 2: Full GAQL query via direct SSE client
+    steps.append("Step 2 — Running campaign query via direct SSE client...")
     import time as _time
-    import threading as _threading
-    import queue as _queue
-
-    base_url = _base_url(GOOGLE_ADS_MCP_URL)
-    sse_lines_received = []
-    endpoint_uri = [None]
-    sse_q = _queue.Queue()
-
-    def _sse_bg():
-        try:
-            with requests.get(
-                GOOGLE_ADS_MCP_URL, stream=True,
-                headers={"Accept": "text/event-stream", "Cache-Control": "no-cache"},
-                timeout=30,
-            ) as r:
-                ev = None
-                for raw in r.iter_lines():
-                    line = raw.decode("utf-8") if isinstance(raw, bytes) else (raw or "")
-                    sse_lines_received.append(repr(line[:120]))
-                    if line.startswith("event:"):
-                        ev = line[6:].strip()
-                    elif line.startswith("data:") and ev == "endpoint":
-                        ds = line[5:].strip()
-                        if ds.startswith("/"):
-                            endpoint_uri[0] = base_url + ds
-                        elif ds.startswith("http"):
-                            endpoint_uri[0] = ds
-                        sse_q.put(("endpoint", endpoint_uri[0]))
-                    elif line.startswith("data:"):
-                        try:
-                            d = json.loads(line[5:].strip())
-                            sse_q.put(("data", d))
-                        except Exception:
-                            sse_q.put(("raw", line[5:].strip()[:200]))
-        except Exception as exc:
-            sse_q.put(("sse_err", str(exc)[:200]))
-
-    _t = _threading.Thread(target=_sse_bg, daemon=True)
-    _t.start()
-
-    # Wait for endpoint
+    t0 = _time.time()
+    gaql = (
+        f"SELECT campaign.name, metrics.cost_micros, metrics.conversions, "
+        f"metrics.clicks, metrics.impressions FROM campaign "
+        f"WHERE segments.date BETWEEN '{date_start}' AND '{date_end}' "
+        f"AND metrics.impressions > 0 LIMIT 5"
+    )
     try:
-        kind, val = sse_q.get(timeout=8)
-        steps.append(f"  SSE first event: {kind} = {str(val)[:100]}")
-    except _queue.Empty:
-        steps.append(f"  {fail} Timeout waiting for SSE endpoint event")
-        steps.append(f"  SSE lines so far: {sse_lines_received[:5]}")
-        steps.append("")
-        steps.append("<a href='/' style='color:#F97316'>← Back</a>")
-        html = "<pre style='background:#111;color:#eee;padding:20px;font-family:monospace;line-height:1.7'>"
-        html += f"<b style='color:#F97316;font-size:15px'>Google Ads Direct SSE Debug</b>\n\n"
-        html += "\n".join(steps)
-        html += "</pre>"
-        return html
-
-    ep = endpoint_uri[0]
-    if not ep:
-        steps.append(f"  {fail} No endpoint URI")
-        steps.append(f"  SSE lines: {sse_lines_received}")
-    else:
-        steps.append(f"  {ok} Endpoint URI: {ep}")
-
-        # POST initialize
-        steps.append("")
-        steps.append("  POSTing initialize...")
-        try:
-            r = requests.post(ep, json={
-                "jsonrpc": "2.0", "method": "initialize",
-                "params": {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
-                           "clientInfo": {"name": "suncrest-debug", "version": "1.0"}},
-                "id": 0
-            }, headers={"Content-Type": "application/json"}, timeout=10)
-            steps.append(f"  Initialize POST → HTTP {r.status_code}, body: {repr(r.text[:200])}")
-        except Exception as ex:
-            steps.append(f"  {fail} Initialize POST error: {ex}")
-
-        # Check for SSE init response
-        try:
-            kind, val = sse_q.get(timeout=3)
-            steps.append(f"  SSE after init: {kind} = {str(val)[:200]}")
-        except _queue.Empty:
-            steps.append("  SSE after init: (no event within 3s)")
-
-        # POST notification
-        try:
-            requests.post(ep, json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-                          headers={"Content-Type": "application/json"}, timeout=5)
-            steps.append("  Sent notifications/initialized")
-        except Exception as ex:
-            steps.append(f"  {fail} Notification error: {ex}")
-
-        # POST tool call
-        steps.append("")
-        steps.append("  POSTing tool call (google-ads-download-report)...")
-        gaql = (f"SELECT campaign.name, metrics.cost_micros, metrics.conversions "
-                f"FROM campaign WHERE segments.date BETWEEN '{date_start}' AND '{date_end}' "
-                f"AND metrics.impressions > 0 LIMIT 3")
-        try:
-            t0 = _time.time()
-            r = requests.post(ep, json={
-                "jsonrpc": "2.0", "method": "tools/call",
-                "params": {"name": "google-ads-download-report",
-                           "arguments": {"customerId": int(GOOGLE_ADS_CID),
-                                         "loginCustomerId": int(GOOGLE_ADS_LOGIN_CID),
-                                         "query": gaql}},
-                "id": 1
-            }, headers={"Content-Type": "application/json"}, timeout=25)
-            elapsed = round(_time.time() - t0, 1)
-            steps.append(f"  Tool call POST → HTTP {r.status_code} in {elapsed}s")
-            steps.append(f"  POST body: {repr(r.text[:400])}")
-        except Exception as ex:
-            steps.append(f"  {fail} Tool call POST error: {ex}")
-
-        # Check for SSE tool result
-        steps.append("")
-        steps.append("  Waiting for SSE response to tool call (up to 20s)...")
-        try:
-            kind, val = sse_q.get(timeout=20)
-            steps.append(f"  {ok} SSE tool result: {kind}")
-            steps.append(f"  Data: {str(val)[:500]}")
-        except _queue.Empty:
-            steps.append(f"  {fail} No SSE response within 20s")
-            steps.append(f"  All SSE lines received: {sse_lines_received[:10]}")
+        rows = call_trueclicks_gaql(
+            GOOGLE_ADS_MCP_URL, int(GOOGLE_ADS_CID), int(GOOGLE_ADS_LOGIN_CID),
+            gaql, timeout=30
+        )
+        elapsed = round(_time.time() - t0, 1)
+        if rows is None:
+            steps.append(f"  {fail} Returned None after {elapsed}s — check Railway deploy logs for [TrueClicks] lines")
+        elif isinstance(rows, list):
+            steps.append(f"  {ok} Got {len(rows)} rows in {elapsed}s")
+            if rows:
+                first = rows[0]
+                steps.append(f"  Sample keys: {list(first.keys()) if isinstance(first, dict) else type(first)}")
+                steps.append(f"  First row: {json.dumps(first)[:300]}")
+        else:
+            steps.append(f"  ⚠️ Unexpected: {type(rows)} → {str(rows)[:200]}")
+    except Exception as exc:
+        elapsed = round(_time.time() - t0, 1)
+        steps.append(f"  {fail} Exception after {elapsed}s: {exc}")
 
     steps.append("")
     steps.append("<a href='/' style='color:#F97316'>← Back to Dashboard</a>")
